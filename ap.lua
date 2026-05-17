@@ -1,15 +1,17 @@
--- [[ 1. ตัวแปรและบริการระบบ ]]
+-- [[ 1. SERVICES ]]
 local Players = game:GetService("Players")
 local Workspace = game:GetService("Workspace")
 local VIM = game:GetService("VirtualInputManager")
 local UserInputService = game:GetService("UserInputService")
-local RunService = game:GetService("RunService")
 
 local LocalPlayer = Players.LocalPlayer
-local _G_Farming = false
-local _G_Distance = 7
 
--- [[ 2. ฟังก์ชันจำลองการกดสกิล ]]
+-- [[ GLOBAL ]]
+_G_Farming = false
+_G_Distance = 7
+_G.AutoCollect = true
+
+-- [[ 2. SKILL ]]
 local function CastSkill(key)
     pcall(function()
         VIM:SendKeyEvent(true, Enum.KeyCode[key], false, game)
@@ -18,60 +20,98 @@ local function CastSkill(key)
     end)
 end
 
--- [[ 3. ลอจิกฟาร์ม V4 (โคตรครอบจักรวาล) ]]
+-- [[ 3. FIND MOB ]]
+local function GetClosestMob()
+    local zombiesFolder = Workspace:FindFirstChild("Zombies")
+    if not zombiesFolder then return nil end
+
+    local char = LocalPlayer.Character
+    if not char then return nil end
+
+    local myRoot = char:FindFirstChild("HumanoidRootPart")
+    if not myRoot then return nil end
+
+    local closest = nil
+    local shortest = math.huge
+
+    for _, mob in pairs(zombiesFolder:GetChildren()) do
+        local hum = mob:FindFirstChildOfClass("Humanoid")
+        local part = mob:FindFirstChild("HumanoidRootPart") or mob.PrimaryPart
+
+        if part and hum and hum.Health > 0 then
+            local dist = (part.Position - myRoot.Position).Magnitude
+            if dist < shortest then
+                shortest = dist
+                closest = mob
+            end
+        end
+    end
+
+    return closest
+end
+
+-- [[ 4. AUTO FARM ]]
 local function StartAutoFarm()
     while _G_Farming do
         task.wait()
-        
-        local zombiesFolder = Workspace:FindFirstChild("Zombies")
-        if not zombiesFolder then continue end
 
-        for _, mob in pairs(zombiesFolder:GetChildren()) do
-            if not _G_Farming then break end
+        local mob = GetClosestMob()
+        if not mob then
+            task.wait(0.5)
+            continue
+        end
 
-            -- ทะลวงหาชิ้นส่วนอะไรก็ได้ในตัวมอนสเตอร์เพื่อใช้เป็นจุดวาป
-            local targetPart = mob:FindFirstChild("HumanoidRootPart") or mob:FindFirstChild("Torso") or mob.PrimaryPart or mob:FindFirstChildWhichIsA("BasePart", true)
-            local targetHum = mob:FindFirstChildOfClass("Humanoid")
+        local targetPart = mob:FindFirstChild("HumanoidRootPart") or mob.PrimaryPart
+        local targetHum = mob:FindFirstChildOfClass("Humanoid")
 
-            -- ฟังก์ชันเช็คว่ามอนตายหรือยัง (รองรับทั้งแมพที่มีเลือดและไม่มีเลือด)
-            local function isAlive()
-                if not mob or not mob.Parent then return false end -- ถ้าตัวมอนหายไปจากแมพ = ตายแล้ว
-                if targetHum then return targetHum.Health > 0 end -- ถ้ามีระบบเลือดมาตรฐาน = เช็คเลือด
-                return true -- ถ้าไม่มีระบบเลือดเลย ให้ตีต่อไปจนกว่าโมเดลมันจะสลายไป
+        while _G_Farming and targetHum and targetHum.Health > 0 do
+            task.wait()
+
+            local char = LocalPlayer.Character
+            if not char then break end
+
+            local myRoot = char:FindFirstChild("HumanoidRootPart")
+            local myHum = char:FindFirstChild("Humanoid")
+
+            if myRoot and myHum and myHum.Health > 0 then
+                myRoot.CFrame = targetPart.CFrame * CFrame.new(0, 0, _G_Distance)
+
+                CastSkill("Z")
+                CastSkill("X")
+                CastSkill("C")
+
+                task.wait(0.3)
+            else
+                break
             end
+        end
+    end
+end
 
-            -- ถ้าหาชิ้นส่วนอะไรในตัวมอนไม่ได้เลย (เช่นบั๊ก) ให้ข้ามไปตัวต่อไป
-            if not targetPart then continue end 
+-- [[ 5. ITEM MAGNET ]]
+local function StartItemMagnet()
+    while _G_Farming and _G.AutoCollect do
+        task.wait(0.2)
 
-            -- ลูปตีจนกว่าจะตาย
-            while _G_Farming and isAlive() do
-                task.wait()
+        local char = LocalPlayer.Character
+        if not char then continue end
+
+        local root = char:FindFirstChild("HumanoidRootPart")
+        if not root then continue end
+
+        for _, v in pairs(Workspace:GetDescendants()) do
+            if v:IsA("Tool") or v.Name:lower():find("drop") or v.Name:lower():find("coin") then
+                local part = v:FindFirstChild("Handle") or v:FindFirstChildWhichIsA("BasePart")
                 
-                local char = LocalPlayer.Character
-                if not char then break end
-                local myRoot = char:FindFirstChild("HumanoidRootPart")
-                local myHum = char:FindFirstChild("Humanoid")
-
-                if myRoot and myHum and myHum.Health > 0 then
-                    -- วาปไปด้านหลังชิ้นส่วนอะไรก็ตามที่หาเจอ
-                    myRoot.CFrame = targetPart.CFrame * CFrame.new(0, 0, _G_Distance)
-                    task.wait(0.1)
-
-                    -- กดสกิล
-                    CastSkill("Z")
-                    CastSkill("X")
-                    CastSkill("C")
-
-                    task.wait(1)
-                else
-                    break
+                if part then
+                    part.CFrame = root.CFrame
                 end
             end
         end
     end
 end
 
--- [[ 4. GUI ]]
+-- [[ 6. GUI ]]
 local UI_Parent = (pcall(function() return game:GetService("CoreGui").Name end) and game:GetService("CoreGui")) or LocalPlayer:WaitForChild("PlayerGui")
 if UI_Parent:FindFirstChild("LunaHubV4") then UI_Parent.LunaHubV4:Destroy() end
 
@@ -135,21 +175,29 @@ SliderFill.BorderSizePixel = 0
 SliderFill.Parent = SliderBG
 Instance.new("UICorner", SliderFill).CornerRadius = UDim.new(0, 5)
 
--- [[ 5. เชื่อมต่อระบบ ]]
+-- [[ 7. EVENTS ]]
 ToggleBtn.MouseButton1Click:Connect(function()
     _G_Farming = not _G_Farming
+
     if _G_Farming then
+        _G.AutoCollect = true
+
         ToggleBtn.BackgroundColor3 = Color3.fromRGB(40, 180, 40)
         ToggleBtn.Text = "AUTO FARM: ON"
+
         task.spawn(StartAutoFarm)
+        task.spawn(StartItemMagnet)
     else
         ToggleBtn.BackgroundColor3 = Color3.fromRGB(180, 40, 40)
         ToggleBtn.Text = "AUTO FARM: OFF"
+
+        _G.AutoCollect = false
     end
 end)
 
 local dragging = false
 SliderBG.MouseButton1Down:Connect(function() dragging = true end)
+
 UserInputService.InputEnded:Connect(function(input)
     if input.UserInputType == Enum.UserInputType.MouseButton1 then dragging = false end
 end)
@@ -162,7 +210,7 @@ UserInputService.InputChanged:Connect(function(input)
         
         local percent = math.clamp((mousePos - sliderPos) / sliderSize, 0, 1)
         _G_Distance = math.floor(percent * 25)
-        
+
         SliderFill.Size = UDim2.new(percent, 0, 1, 0)
         SliderLabel.Text = "TP Distance: " .. _G_Distance
     end
