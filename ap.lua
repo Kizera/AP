@@ -9,16 +9,16 @@ local HttpService = game:GetService("HttpService")
 local LocalPlayer = Players.LocalPlayer
 local configFileName = "LunaHub_DelaySave.json"
 
--- บังคับเปิดออโต้เมื่อย้ายมิติ (Autoexec)
+-- บังคับเปิดออโต้เมื่อโหลดเข้าแมพ (Autoexec Support)
 _G_Farming = true
 _G_AutoSkill = true
 _G_MagnetItems = true 
 
--- ค่าเริ่มต้น (จะดึงจากไฟล์เซฟถ้าเคยรูดไว้)
+-- ค่าเริ่มต้นของสไลเดอร์ (จะดึงจากไฟล์เซฟถ้ามี)
 _G_Distance = 7        
 _G_SkillDelay = 0.5   
 
--- [[ 2. ระบบ Save / Load จำค่า Slider ]]
+-- [[ 2. ระบบ Save / Load จำเฉพาะค่าสไลเดอร์ ]]
 local function SaveSettings()
     if type(writefile) == "function" then
         pcall(function()
@@ -53,7 +53,7 @@ local function PressKey(key)
     end)
 end
 
--- [[ 4. ฟังก์ชันตรวจสอบหน้าต่าง UI จบเกมจริงๆ ]]
+-- [[ 4. ฟังก์ชันตรวจสอบหน้าต่าง UI จบเกม ]]
 local function IsMatchReallyOver()
     local playerGui = LocalPlayer:FindFirstChildOfClass("PlayerGui")
     if not playerGui then return false end
@@ -71,37 +71,34 @@ local function IsMatchReallyOver()
     return isOver
 end
 
--- [[ 5. ฟังก์ชันมหาเทพ: ค้นหาเป้าหมายทั้งแมพแบบไร้ข้อจำกัด ]]
+-- [[ 5. ฟังก์ชันสแกนเป้าหมายทั้งแมพแบบ Universal ]]
 local function GetUniversalTarget()
-    -- ท่าที่ 1: เช็คในโฟลเดอร์หลักก่อนเพื่อความเร็ว
     local zombiesFolder = Workspace:FindFirstChild("Zombies")
     if zombiesFolder then
         for _, mob in pairs(zombiesFolder:GetChildren()) do
             local hum = mob:FindFirstChildOfClass("Humanoid")
             local root = mob:FindFirstChild("HumanoidRootPart") or mob:FindFirstChild("Torso") or mob.PrimaryPart
             if hum and hum.Health > 0 and root then
-                return root, hum, mob
+                return root, hum
             end
         end
     end
 
-    -- ท่าที่ 2: ถ้าด่านลึกๆ ตัวเกมเปลี่ยนโฟลเดอร์ ให้สแกนหา Model ที่มีระบบเลือดทั้งแมพทันที
     for _, obj in pairs(Workspace:GetChildren()) do
         if obj:IsA("Model") and obj ~= LocalPlayer.Character and not Players:GetPlayerFromCharacter(obj) then
-            -- ยกเว้นชิ้นส่วนระบบที่ไม่ใช่มอนสเตอร์
             if obj.Name ~= "Platforms" and obj.Name ~= "Zones" then
                 local hum = obj:FindFirstChildOfClass("Humanoid")
                 local root = obj:FindFirstChild("HumanoidRootPart") or obj:FindFirstChild("Torso") or obj.PrimaryPart or obj:FindFirstChildWhichIsA("BasePart", true)
                 if hum and hum.Health > 0 and root then
-                    return root, hum, obj
+                    return root, hum
                 end
             end
         end
     end
-    return nil, nil, nil
+    return nil, nil
 end
 
--- [[ 6. ลูปหลัก: ควบคุมการฟาร์มและการสร้างห้อง ]]
+-- [[ 6. ลูปหลัก: ระบบวาปฟาร์มและกด Replay เริ่มใหม่ ]]
 task.spawn(function()
     while true do
         task.wait()
@@ -109,35 +106,17 @@ task.spawn(function()
             local char = LocalPlayer.Character
             local myRoot = char and char:FindFirstChild("HumanoidRootPart")
             
-            -- 6.1 ตรวจสอบหน้า Lobby หลัก
-            local zones = Workspace:FindFirstChild("Zones")
-            if zones and zones:FindFirstChild("RaidShop") then
-                pcall(function()
-                    local platform = Workspace:WaitForChild("Platforms", 2):WaitForChild("Platform", 2)
-                    local remote = ReplicatedStorage:WaitForChild("Assets", 2):WaitForChild("Remotes", 2):WaitForChild("Interact", 2)
-                    if platform and remote then
-                        remote:FireServer("CreateMatch", platform, {
-                            IsTaken = true, Difficulty = "Gravewalker", Map = "Shibuya",
-                            Mode = "Survival", FriendsOnly = true, MaxPlayers = 1
-                        })
-                    end
-                end)
-                task.wait(5)
-                continue
-            end
-
-            -- 6.2 ค้นหาเป้าหมายด้วยระบบ Universal Scanner
-            local targetRoot, targetHum, targetMob = GetUniversalTarget()
+            local targetRoot, targetHum = GetUniversalTarget()
 
             if targetRoot and targetHum and myRoot then
-                -- มีมอนสเตอร์เหลืออยู่ -> วาปเกาะหลังตีจนกว่าจะตาย
+                -- มีมอนสเตอร์เหลืออยู่ -> วาปเกาะหลังสับปกติ
                 while _G_Farming and targetRoot and targetHum and targetHum.Health > 0 do
                     task.wait()
                     if not LocalPlayer.Character or not LocalPlayer.Character:FindFirstChild("HumanoidRootPart") then break end
                     myRoot.CFrame = targetRoot.CFrame * CFrame.new(0, 0, _G_Distance)
                 end
             else
-                -- ไม่มีมอนสเตอร์เหลืออยู่เลยทั้งแมพ -> เช็คว่าหน้าต่างจบเกมขึ้นไหม เพื่อกดเริ่มใหม่
+                -- มอนสเตอร์หมดแมพ -> เช็ค UI จบด่านแล้วกดเล่นซ้ำข้ามมิติ
                 if IsMatchReallyOver() then
                     pcall(function()
                         local remote = ReplicatedStorage:WaitForChild("Assets", 2):WaitForChild("Remotes", 2):WaitForChild("Interact", 2)
@@ -150,12 +129,11 @@ task.spawn(function()
     end
 end)
 
--- [[ 7. ลูปที่ 2: ระบบ Auto Skill อิสระ ]]
+-- [[ 7. ลูปที่ 2: ระบบ Auto Skill ]]
 task.spawn(function()
     while true do
         task.wait()
         if _G_Farming and _G_AutoSkill then
-            -- จะกดสกิลก็ต่อเมื่อตัวสแกนตรวจเจอมอนสเตอร์ในแมพเท่านั้น
             local targetRoot, targetHum = GetUniversalTarget()
             if targetRoot and targetHum then
                 task.spawn(function() PressKey("E") end)
@@ -191,12 +169,12 @@ task.spawn(function()
     end
 end)
 
--- [[ 9. การสร้าง GUI V17 ]]
+-- [[ 9. การสร้าง GUI V18 (คลีน สัดส่วนพอดีจอ) ]]
 local UI_Parent = (pcall(function() return game:GetService("CoreGui").Name end) and game:GetService("CoreGui")) or LocalPlayer:WaitForChild("PlayerGui")
-if UI_Parent:FindFirstChild("LunaHubV17") then UI_Parent.LunaHubV17:Destroy() end
+if UI_Parent:FindFirstChild("LunaHubV18") then UI_Parent.LunaHubV18:Destroy() end
 
 local ScreenGui = Instance.new("ScreenGui")
-ScreenGui.Name = "LunaHubV17"
+ScreenGui.Name = "LunaHubV18"
 ScreenGui.Parent = UI_Parent
 
 local MainFrame = Instance.new("Frame")
@@ -213,7 +191,7 @@ local Title = Instance.new("TextLabel")
 Title.Size = UDim2.new(1, 0, 0, 35)
 Title.BackgroundColor3 = Color3.fromRGB(35, 35, 45)
 Title.TextColor3 = Color3.fromRGB(255, 255, 255)
-Title.Text = "🌙 LUNA HUB V17 | UNIVERSAL"
+Title.Text = "🌙 LUNA HUB V18 | PURE FARM"
 Title.Font = Enum.Font.GothamBold
 Title.TextSize = 13
 Title.Parent = MainFrame
@@ -222,7 +200,7 @@ Instance.new("UICorner", Title).CornerRadius = UDim.new(0, 10)
 local FarmBtn = Instance.new("TextButton")
 FarmBtn.Size = UDim2.new(0.9, 0, 0, 30)
 FarmBtn.Position = UDim2.new(0.05, 0, 0, 45)
-FarmBtn.BackgroundColor3 = _G_Farming and Color3.fromRGB(40, 180, 40) or Color3.fromRGB(180, 40, 40)
+FarmBtn.BackgroundColor3 = Color3.fromRGB(40, 180, 40)
 FarmBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
 FarmBtn.Text = "1. MAIN FARM & REPLAY: ON"
 FarmBtn.Font = Enum.Font.GothamBold
@@ -233,7 +211,7 @@ Instance.new("UICorner", FarmBtn).CornerRadius = UDim.new(0, 6)
 local SkillBtn = Instance.new("TextButton")
 SkillBtn.Size = UDim2.new(0.9, 0, 0, 30)
 SkillBtn.Position = UDim2.new(0.05, 0, 0, 80)
-SkillBtn.BackgroundColor3 = _G_AutoSkill and Color3.fromRGB(40, 180, 40) or Color3.fromRGB(180, 40, 40)
+SkillBtn.BackgroundColor3 = Color3.fromRGB(40, 180, 40)
 SkillBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
 SkillBtn.Text = "2. AUTO SKILL (E,Z,X,C): ON"
 SkillBtn.Font = Enum.Font.GothamBold
@@ -244,7 +222,7 @@ Instance.new("UICorner", SkillBtn).CornerRadius = UDim.new(0, 6)
 local MagnetBtn = Instance.new("TextButton")
 MagnetBtn.Size = UDim2.new(0.9, 0, 0, 30)
 MagnetBtn.Position = UDim2.new(0.05, 0, 0, 115)
-MagnetBtn.BackgroundColor3 = _G_MagnetItems and Color3.fromRGB(0, 130, 200) or Color3.fromRGB(180, 40, 40)
+MagnetBtn.BackgroundColor3 = Color3.fromRGB(0, 130, 200)
 MagnetBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
 MagnetBtn.Text = "3. SMART MAGNET (ดูดของ): ON"
 MagnetBtn.Font = Enum.Font.GothamBold
@@ -304,7 +282,7 @@ DelayFill.BorderSizePixel = 0
 DelayFill.Parent = DelayBG
 Instance.new("UICorner", DelayFill).CornerRadius = UDim.new(0, 4)
 
--- ระบบปุ่ม
+-- [[ 10. ระบบผูกปุ่มควบคุม ]]
 FarmBtn.MouseButton1Click:Connect(function()
     _G_Farming = not _G_Farming
     FarmBtn.BackgroundColor3 = _G_Farming and Color3.fromRGB(40, 180, 40) or Color3.fromRGB(180, 40, 40)
