@@ -7,23 +7,23 @@ local UserInputService = game:GetService("UserInputService")
 local HttpService = game:GetService("HttpService")
 
 local LocalPlayer = Players.LocalPlayer
-local configFileName = "LunaHubV12_Config.json"
+local configFileName = "LunaHub_DelaySave.json"
 
--- ค่าเริ่มต้นของระบบ (จะโดนทับถ้ามีไฟล์เซฟเก่า)
+-- บังคับเปิดสถานะเหล่านี้เสมอ เพื่อให้ข้ามมิติแล้วฟาร์มต่อทันที
 _G_Farming = true
 _G_AutoSkill = true
 _G_MagnetItems = true 
+
+-- ค่าตัวเลขเริ่มต้น (จะถูกทับถ้าเคยรูดเซฟไว้)
 _G_Distance = 7        
 _G_SkillDelay = 0.5   
 
--- [[ 2. ระบบ Save / Load ตั้งค่าข้ามมิติ ]]
+-- [[ 2. ระบบ Save / Load (จำแค่ตัวเลข Slider) ]]
 local function SaveSettings()
     if writefile then
-        local success, err = pcall(function()
+        pcall(function()
+            -- เซฟแค่ 2 ค่านี้เท่านั้น
             local data = {
-                Farming = _G_Farming,
-                AutoSkill = _G_AutoSkill,
-                MagnetItems = _G_MagnetItems,
                 Distance = _G_Distance,
                 SkillDelay = _G_SkillDelay
             }
@@ -34,20 +34,17 @@ end
 
 local function LoadSettings()
     if isfile and isfile(configFileName) and readfile then
-        local success, result = pcall(function()
-            return HttpService:JSONDecode(readfile(configFileName))
+        pcall(function()
+            local result = HttpService:JSONDecode(readfile(configFileName))
+            if result then
+                _G_Distance = result.Distance or 7
+                _G_SkillDelay = result.SkillDelay or 0.5
+            end
         end)
-        if success and result then
-            _G_Farming = result.Farming ~= nil and result.Farming or true
-            _G_AutoSkill = result.AutoSkill ~= nil and result.AutoSkill or true
-            _G_MagnetItems = result.MagnetItems ~= nil and result.MagnetItems or true
-            _G_Distance = result.Distance or 7
-            _G_SkillDelay = result.SkillDelay or 0.5
-        end
     end
 end
 
--- โหลดค่าตั้งค่าเก่าทันทีที่สคริปต์เริ่มทำงาน
+-- โหลดค่าตัวเลขที่เคยตั้งไว้ทันที
 LoadSettings()
 
 -- [[ 3. ฟังก์ชันจำลองคีย์บอร์ด ]]
@@ -59,7 +56,7 @@ local function PressKey(key)
     end)
 end
 
--- [[ 4. ลูปอิสระที่ 1: ระบบฟาร์ม, สร้างห้อง และ Auto Replay ]]
+-- [[ 4. ลูปที่ 1: ระบบฟาร์ม, สร้างห้อง และ Auto Replay ]]
 task.spawn(function()
     while true do
         task.wait()
@@ -70,7 +67,7 @@ task.spawn(function()
             local zones = Workspace:FindFirstChild("Zones")
             local zombiesFolder = Workspace:FindFirstChild("Zombies")
 
-            -- 4.1 สถานะ: อยู่หน้า Lobbyหลัก -> ทำการสร้างห้อง
+            -- สถานะ: อยู่หน้า Lobbyหลัก
             if zones and zones:FindFirstChild("RaidShop") then
                 pcall(function()
                     local platform = Workspace:WaitForChild("Platforms", 2):WaitForChild("Platform", 2)
@@ -85,26 +82,23 @@ task.spawn(function()
                 task.wait(5)
                 continue
             
-            -- 4.2 สถานะ: อยู่ในดันเจี้ยนแต่เคลียร์มอนหมดแล้ว/จบเกม -> ทำการกด Auto Replay ทันที
+            -- สถานะ: จบเกม -> กด Play Again
             elseif not zombiesFolder or #zombiesFolder:GetChildren() == 0 then
-                -- หน่วงเวลาเช็คซ้ำ 2 วินาทีกันรอยต่อระหว่างเวฟรวน
                 task.wait(2)
                 if _G_Farming and (not Workspace:FindFirstChild("Zombies") or #Workspace.Zombies:GetChildren() == 0) and not (Workspace:FindFirstChild("Zones") and Workspace.Zones:FindFirstChild("RaidShop")) then
                     pcall(function()
                         local interactRemote = ReplicatedStorage:WaitForChild("Assets", 2):WaitForChild("Remotes", 2):WaitForChild("Interact", 2)
                         if interactRemote then
-                            -- ยิงรีโมทเลือกเล่นซ้ำทันทีข้ามมิติโดยไม่ต้องกลับล็อบบี้
                             interactRemote:FireServer("PlayAgain")
                         end
                     end)
-                    task.wait(5) -- หน่วงเวลากันสแปมรีโมทรีเพลย์ซ้ำๆ
+                    task.wait(5)
                 end
 
-            -- 4.3 สถานะ: มอนสเตอร์เกิด -> ทำการวาปเกาะหลังตีปกติ
+            -- สถานะ: มอนสเตอร์เกิด -> วาปตีปกติ
             elseif zombiesFolder and myRoot then
                 for _, mob in pairs(zombiesFolder:GetChildren()) do
                     if not _G_Farming then break end
-                    
                     local targetPart = mob:FindFirstChild("HumanoidRootPart") or mob:FindFirstChild("Torso") or mob.PrimaryPart or mob:FindFirstChildWhichIsA("BasePart", true)
                     local targetHum = mob:FindFirstChildOfClass("Humanoid")
 
@@ -125,14 +119,13 @@ task.spawn(function()
     end
 end)
 
--- [[ 5. ลูปอิสระที่ 2: ระบบ Auto Skill (ตัดออโต้คลิกออกตามสั่ง) ]]
+-- [[ 5. ลูปที่ 2: ระบบ Auto Skill ]]
 task.spawn(function()
     while true do
         task.wait()
         if _G_Farming and _G_AutoSkill then
             local zombiesFolder = Workspace:FindFirstChild("Zombies")
             if zombiesFolder and #zombiesFolder:GetChildren() > 0 then
-                -- สปอว์น Thread ยิงสกิลพร้อมกันทีเดียว
                 task.spawn(function() PressKey("E") end)
                 task.spawn(function() PressKey("Z") end)
                 task.spawn(function() PressKey("X") end)
@@ -143,7 +136,7 @@ task.spawn(function()
     end
 end)
 
--- [[ 6. ลูปอิสระที่ 3: Smart Magnet ดูดของดรอป ]]
+-- [[ 6. ลูปที่ 3: Smart Magnet ดูดของ ]]
 task.spawn(function()
     while true do
         task.wait(0.2)
@@ -166,16 +159,16 @@ task.spawn(function()
     end
 end)
 
--- [[ 7. การสร้าง GUI V12 (UX ดีไซน์ ปรับสัดส่วนใหม่ให้กะทัดรัด) ]]
+-- [[ 7. GUI (ดีไซน์เดิม) ]]
 local UI_Parent = (pcall(function() return game:GetService("CoreGui").Name end) and game:GetService("CoreGui")) or LocalPlayer:WaitForChild("PlayerGui")
-if UI_Parent:FindFirstChild("LunaHubV12") then UI_Parent.LunaHubV12:Destroy() end
+if UI_Parent:FindFirstChild("LunaHubV13") then UI_Parent.LunaHubV13:Destroy() end
 
 local ScreenGui = Instance.new("ScreenGui")
-ScreenGui.Name = "LunaHubV12"
+ScreenGui.Name = "LunaHubV13"
 ScreenGui.Parent = UI_Parent
 
 local MainFrame = Instance.new("Frame")
-MainFrame.Size = UDim2.new(0, 280, 0, 255) -- หดขนาดลงมาพอดีกับปุ่มที่เหลือ
+MainFrame.Size = UDim2.new(0, 280, 0, 255)
 MainFrame.Position = UDim2.new(0.5, -140, 0.5, -127)
 MainFrame.BackgroundColor3 = Color3.fromRGB(20, 20, 25)
 MainFrame.BorderSizePixel = 0
@@ -188,13 +181,13 @@ local Title = Instance.new("TextLabel")
 Title.Size = UDim2.new(1, 0, 0, 35)
 Title.BackgroundColor3 = Color3.fromRGB(35, 35, 45)
 Title.TextColor3 = Color3.fromRGB(255, 255, 255)
-Title.Text = "🌙 LUNA HUB V12 | REPLAY"
+Title.Text = "🌙 LUNA HUB V13 | MEMORY"
 Title.Font = Enum.Font.GothamBold
 Title.TextSize = 13
 Title.Parent = MainFrame
 Instance.new("UICorner", Title).CornerRadius = UDim.new(0, 10)
 
--- ปุ่ม 1: ฟาร์มหลัก
+-- ปุ่มต่างๆ (ตั้งค่าเป็นสีเขียวตลอดเวลาเพราะล็อกให้เปิดออโต้)
 local FarmBtn = Instance.new("TextButton")
 FarmBtn.Size = UDim2.new(0.9, 0, 0, 30)
 FarmBtn.Position = UDim2.new(0.05, 0, 0, 45)
@@ -206,7 +199,6 @@ FarmBtn.TextSize = 11
 FarmBtn.Parent = MainFrame
 Instance.new("UICorner", FarmBtn).CornerRadius = UDim.new(0, 6)
 
--- ปุ่ม 2: ออโต้สกิล
 local SkillBtn = Instance.new("TextButton")
 SkillBtn.Size = UDim2.new(0.9, 0, 0, 30)
 SkillBtn.Position = UDim2.new(0.05, 0, 0, 80)
@@ -218,7 +210,6 @@ SkillBtn.TextSize = 11
 SkillBtn.Parent = MainFrame
 Instance.new("UICorner", SkillBtn).CornerRadius = UDim.new(0, 6)
 
--- ปุ่ม 3: ดูดของดรอป
 local MagnetBtn = Instance.new("TextButton")
 MagnetBtn.Size = UDim2.new(0.9, 0, 0, 30)
 MagnetBtn.Position = UDim2.new(0.05, 0, 0, 115)
@@ -284,26 +275,23 @@ DelayFill.BorderSizePixel = 0
 DelayFill.Parent = DelayBG
 Instance.new("UICorner", DelayFill).CornerRadius = UDim.new(0, 4)
 
--- [[ 8. ผูกลอจิกปุ่มและการเซฟการตั้งค่าอัตโนมัติ ]]
+-- [[ 8. ผูกลอจิกปุ่ม (ปิดฟังก์ชันเซฟจากปุ่ม) ]]
 FarmBtn.MouseButton1Click:Connect(function()
     _G_Farming = not _G_Farming
     FarmBtn.BackgroundColor3 = _G_Farming and Color3.fromRGB(40, 180, 40) or Color3.fromRGB(180, 40, 40)
     FarmBtn.Text = "1. MAIN FARM & REPLAY: " .. (_G_Farming and "ON" or "OFF")
-    SaveSettings()
 end)
 
 SkillBtn.MouseButton1Click:Connect(function()
     _G_AutoSkill = not _G_AutoSkill
     SkillBtn.BackgroundColor3 = _G_AutoSkill and Color3.fromRGB(40, 180, 40) or Color3.fromRGB(180, 40, 40)
     SkillBtn.Text = "2. AUTO SKILL (E,Z,X,C): " .. (_G_AutoSkill and "ON" or "OFF")
-    SaveSettings()
 end)
 
 MagnetBtn.MouseButton1Click:Connect(function()
     _G_MagnetItems = not _G_MagnetItems
     MagnetBtn.BackgroundColor3 = _G_MagnetItems and Color3.fromRGB(0, 130, 200) or Color3.fromRGB(180, 40, 40)
     MagnetBtn.Text = "3. SMART MAGNET (ดูดของ): " .. (_G_MagnetItems and "ON" or "OFF")
-    SaveSettings()
 end)
 
 local dragDist, dragDelay = false, false
@@ -312,7 +300,9 @@ DelayBG.MouseButton1Down:Connect(function() dragDelay = true end)
 
 UserInputService.InputEnded:Connect(function(input)
     if input.UserInputType == Enum.UserInputType.MouseButton1 then 
-        if dragDist or dragDelay then SaveSettings() end -- เซฟทันทีที่ปล่อยเมาส์จากการรูด Slider
+        if dragDist or dragDelay then 
+            SaveSettings() -- เซฟแค่ตอนที่ปล่อยเมาส์จาก Slider
+        end 
         dragDist, dragDelay = false, false 
     end
 end)
