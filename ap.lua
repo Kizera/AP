@@ -1,157 +1,87 @@
 -- [[ 1. ตัวแปรและบริการระบบ ]]
 local Players = game:GetService("Players")
 local Workspace = game:GetService("Workspace")
-local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local VIM = game:GetService("VirtualInputManager")
 local UserInputService = game:GetService("UserInputService")
-local HttpService = game:GetService("HttpService")
+local RunService = game:GetService("RunService")
 
 local LocalPlayer = Players.LocalPlayer
-local configFileName = "LunaHub_CoreSave.json"
+local _G_Farming = false
+local _G_Distance = 7
 
--- บังคับเปิดระบบฟาร์มและสกิลทันทีเมื่อย้ายมิติ (Autoexec)
-_G_Farming = true
-_G_AutoSkill = true
-
--- ค่าเริ่มต้นของสไลเดอร์ (จะดึงจากไฟล์เซฟถ้าเคยรูดไว้)
-_G_Distance = 7        
-_G_SkillDelay = 0.5   
-
--- [[ 2. ระบบ Save / Load จำเฉพาะค่าสไลเดอร์ ]]
-local function SaveSettings()
-    if type(writefile) == "function" then
-        pcall(function()
-            local data = { Distance = _G_Distance, SkillDelay = _G_SkillDelay }
-            writefile(configFileName, HttpService:JSONEncode(data))
-        end)
-    end
-end
-
-local function LoadSettings()
-    if type(isfile) == "function" and type(readfile) == "function" then
-        pcall(function()
-            if isfile(configFileName) then
-                local result = HttpService:JSONDecode(readfile(configFileName))
-                if result then
-                    _G_Distance = result.Distance or 7
-                    _G_SkillDelay = result.SkillDelay or 0.5
-                end
-            end
-        end)
-    end
-end
-
-LoadSettings()
-
--- [[ 3. ฟังก์ชันจำลองคีย์บอร์ด ]]
-local function PressKey(key)
+-- [[ 2. ฟังก์ชันจำลองการกดสกิล ]]
+local function CastSkill(key)
     pcall(function()
         VIM:SendKeyEvent(true, Enum.KeyCode[key], false, game)
-        task.wait(0.02)
+        task.wait(0.05)
         VIM:SendKeyEvent(false, Enum.KeyCode[key], false, game)
     end)
 end
 
--- [[ 4. ฟังก์ชันตรวจสอบหน้าต่าง UI จบเกมจริงๆ เพื่อความเสถียร ]]
-local function IsMatchReallyOver()
-    local playerGui = LocalPlayer:FindFirstChildOfClass("PlayerGui")
-    if not playerGui then return false end
-    local isOver = false
-    pcall(function()
-        for _, v in pairs(playerGui:GetDescendants()) do
-            if v:IsA("TextLabel") or v:IsA("TextButton") then
-                local t = v.Text:lower()
-                if t:find("again") or t:find("replay") or t:find("victory") or t:find("defeat") or t:find("reward") or t:find("retry") then
-                    if v.Visible then isOver = true break end
-                end
-            end
-        end
-    end)
-    return isOver
-end
-
--- [[ 5. ฟังก์ชันเรดาร์: สแกนหาเป้าหมายตัวแรกที่ยังมีชีวิตในโฟลเดอร์ตลอดเวลา ]]
-local function GetAliveTarget()
-    local zombiesFolder = Workspace:FindFirstChild("Zombies")
-    if not zombiesFolder then return nil, nil end
-
-    for _, mob in pairs(zombiesFolder:GetChildren()) do
-        local hum = mob:FindFirstChildOfClass("Humanoid")
-        local root = mob:FindFirstChild("HumanoidRootPart") or mob:FindFirstChild("Torso") or mob.PrimaryPart or mob:FindFirstChildWhichIsA("BasePart", true)
+-- [[ 3. ลอจิกฟาร์ม V4 (โคตรครอบจักรวาล) ]]
+local function StartAutoFarm()
+    while _G_Farming do
+        task.wait()
         
-        -- ถ้าเจอมอนสเตอร์ที่มีเลือดมากกว่า 0 จะล็อกเป้าตัวนี้ทันที
-        if hum and hum.Health > 0 and root then
-            return root, hum
+        local zombiesFolder = Workspace:FindFirstChild("Zombies")
+        if not zombiesFolder then continue end
+
+        for _, mob in pairs(zombiesFolder:GetChildren()) do
+            if not _G_Farming then break end
+
+            -- ทะลวงหาชิ้นส่วนอะไรก็ได้ในตัวมอนสเตอร์เพื่อใช้เป็นจุดวาป
+            local targetPart = mob:FindFirstChild("HumanoidRootPart") or mob:FindFirstChild("Torso") or mob.PrimaryPart or mob:FindFirstChildWhichIsA("BasePart", true)
+            local targetHum = mob:FindFirstChildOfClass("Humanoid")
+
+            -- ฟังก์ชันเช็คว่ามอนตายหรือยัง (รองรับทั้งแมพที่มีเลือดและไม่มีเลือด)
+            local function isAlive()
+                if not mob or not mob.Parent then return false end -- ถ้าตัวมอนหายไปจากแมพ = ตายแล้ว
+                if targetHum then return targetHum.Health > 0 end -- ถ้ามีระบบเลือดมาตรฐาน = เช็คเลือด
+                return true -- ถ้าไม่มีระบบเลือดเลย ให้ตีต่อไปจนกว่าโมเดลมันจะสลายไป
+            end
+
+            -- ถ้าหาชิ้นส่วนอะไรในตัวมอนไม่ได้เลย (เช่นบั๊ก) ให้ข้ามไปตัวต่อไป
+            if not targetPart then continue end 
+
+            -- ลูปตีจนกว่าจะตาย
+            while _G_Farming and isAlive() do
+                task.wait()
+                
+                local char = LocalPlayer.Character
+                if not char then break end
+                local myRoot = char:FindFirstChild("HumanoidRootPart")
+                local myHum = char:FindFirstChild("Humanoid")
+
+                if myRoot and myHum and myHum.Health > 0 then
+                    -- วาปไปด้านหลังชิ้นส่วนอะไรก็ตามที่หาเจอ
+                    myRoot.CFrame = targetPart.CFrame * CFrame.new(0, 0, _G_Distance)
+                    task.wait(0.1)
+
+                    -- กดสกิล
+                    CastSkill("Z")
+                    CastSkill("X")
+                    CastSkill("C")
+
+                    task.wait(1)
+                else
+                    break
+                end
+            end
         end
     end
-    return nil, nil
 end
 
--- [[ 6. ลูปหลัก: ระบบวาร์ปโจมตีแบบ Dynamic (รองรับการเปลี่ยน Section) ]]
-task.spawn(function()
-    while true do
-        task.wait()
-        if _G_Farming then
-            local char = LocalPlayer.Character
-            local myRoot = char and char:FindFirstChild("HumanoidRootPart")
-            
-            -- สแกนหาเป้าหมายสดๆ จากโฟลเดอร์ Zombies
-            local targetRoot, targetHum = GetAliveTarget()
-
-            if targetRoot and targetHum and myRoot then
-                -- เกาะหลังสับจนกว่าเป้าหมายนี้จะตายหรือหายไปจากแมพ
-                while _G_Farming and targetHum and targetHum.Health > 0 and targetRoot.Parent do
-                    task.wait()
-                    -- อัปเดตสถานะตัวละครเรา
-                    local currentChar = LocalPlayer.Character
-                    local currentRoot = currentChar and currentChar:FindFirstChild("HumanoidRootPart")
-                    if not currentRoot then break end
-                    
-                    currentRoot.CFrame = targetRoot.CFrame * CFrame.new(0, 0, _G_Distance)
-                end
-                -- พอตายลูปจะหลุด และวนกลับไปใช้ GetAliveTarget() สแกนหาตัวใหม่หรือ Section ใหม่ทันที
-            else
-                -- ถ้าหามอนสเตอร์ไม่เจอเลย (เคลียร์หมดแล้ว) ให้เช็ค UI จบเกมเพื่อกด Replay
-                if IsMatchReallyOver() then
-                    pcall(function()
-                        local remote = ReplicatedStorage:WaitForChild("Assets", 2):WaitForChild("Remotes", 2):WaitForChild("Interact", 2)
-                        if remote then remote:FireServer("PlayAgain") end
-                    end)
-                    task.wait(5) -- คูลดาวน์กันรีโมทเบิ้ล
-                end
-            end
-        end
-    end
-end)
-
--- [[ 7. ลูปที่ 2: ระบบ Auto Skill จะทำงานเมื่อตรวจพบเป้าหมายเท่านั้น ]]
-task.spawn(function()
-    while true do
-        task.wait()
-        if _G_Farming and _G_AutoSkill then
-            local targetRoot, targetHum = GetAliveTarget()
-            if targetRoot and targetHum then
-                task.spawn(function() PressKey("E") end)
-                task.spawn(function() PressKey("Z") end)
-                task.spawn(function() PressKey("X") end)
-                task.spawn(function() PressKey("C") end)
-                task.wait(_G_SkillDelay)
-            end
-        end
-    end
-end)
-
--- [[ 8. การสร้าง GUI V21 ]]
+-- [[ 4. GUI ]]
 local UI_Parent = (pcall(function() return game:GetService("CoreGui").Name end) and game:GetService("CoreGui")) or LocalPlayer:WaitForChild("PlayerGui")
-if UI_Parent:FindFirstChild("LunaHubV21") then UI_Parent.LunaHubV21:Destroy() end
+if UI_Parent:FindFirstChild("LunaHubV4") then UI_Parent.LunaHubV4:Destroy() end
 
 local ScreenGui = Instance.new("ScreenGui")
-ScreenGui.Name = "LunaHubV21"
+ScreenGui.Name = "LunaHubV4"
 ScreenGui.Parent = UI_Parent
 
 local MainFrame = Instance.new("Frame")
-MainFrame.Size = UDim2.new(0, 280, 0, 185)
-MainFrame.Position = UDim2.new(0.5, -140, 0.5, -92)
+MainFrame.Size = UDim2.new(0, 260, 0, 180)
+MainFrame.Position = UDim2.new(0.5, -130, 0.5, -90)
 MainFrame.BackgroundColor3 = Color3.fromRGB(20, 20, 25)
 MainFrame.BorderSizePixel = 0
 MainFrame.Active = true
@@ -163,126 +93,77 @@ local Title = Instance.new("TextLabel")
 Title.Size = UDim2.new(1, 0, 0, 35)
 Title.BackgroundColor3 = Color3.fromRGB(35, 35, 45)
 Title.TextColor3 = Color3.fromRGB(255, 255, 255)
-Title.Text = "🌙 LUNA HUB V21 | DYNAMIC SECTIONS"
+Title.Text = "🌙 LUNA HUB V4 | AUTO FARM"
 Title.Font = Enum.Font.GothamBold
-Title.TextSize = 11
+Title.TextSize = 14
 Title.Parent = MainFrame
 Instance.new("UICorner", Title).CornerRadius = UDim.new(0, 10)
 
-local FarmBtn = Instance.new("TextButton")
-FarmBtn.Size = UDim2.new(0.42, 0, 0, 30)
-FarmBtn.Position = UDim2.new(0.05, 0, 0, 45)
-FarmBtn.BackgroundColor3 = Color3.fromRGB(40, 180, 40)
-FarmBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
-FarmBtn.Text = "FARM: ON"
-FarmBtn.Font = Enum.Font.GothamBold
-FarmBtn.TextSize = 11
-FarmBtn.Parent = MainFrame
-Instance.new("UICorner", FarmBtn).CornerRadius = UDim.new(0, 6)
+local ToggleBtn = Instance.new("TextButton")
+ToggleBtn.Size = UDim2.new(0.85, 0, 0, 40)
+ToggleBtn.Position = UDim2.new(0.075, 0, 0, 50)
+ToggleBtn.BackgroundColor3 = Color3.fromRGB(180, 40, 40)
+ToggleBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+ToggleBtn.Text = "AUTO FARM: OFF"
+ToggleBtn.Font = Enum.Font.GothamBold
+ToggleBtn.TextSize = 14
+ToggleBtn.Parent = MainFrame
+Instance.new("UICorner", ToggleBtn).CornerRadius = UDim.new(0, 8)
 
-local SkillBtn = Instance.new("TextButton")
-SkillBtn.Size = UDim2.new(0.42, 0, 0, 30)
-SkillBtn.Position = UDim2.new(0.53, 0, 0, 45)
-SkillBtn.BackgroundColor3 = Color3.fromRGB(40, 180, 40)
-SkillBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
-SkillBtn.Text = "SKILL: ON"
-SkillBtn.Font = Enum.Font.GothamBold
-SkillBtn.TextSize = 11
-SkillBtn.Parent = MainFrame
-Instance.new("UICorner", SkillBtn).CornerRadius = UDim.new(0, 6)
+local SliderLabel = Instance.new("TextLabel")
+SliderLabel.Size = UDim2.new(1, 0, 0, 30)
+SliderLabel.Position = UDim2.new(0, 0, 0, 100)
+SliderLabel.BackgroundTransparency = 1
+SliderLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
+SliderLabel.Text = "TP Distance: " .. _G_Distance
+SliderLabel.Font = Enum.Font.Gotham
+SliderLabel.TextSize = 13
+SliderLabel.Parent = MainFrame
 
--- สไลเดอร์ระยะห่าง
-local DistLabel = Instance.new("TextLabel")
-DistLabel.Size = UDim2.new(0.9, 0, 0, 20)
-DistLabel.Position = UDim2.new(0.05, 0, 0, 85)
-DistLabel.BackgroundTransparency = 1
-DistLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
-DistLabel.Text = "Back-TP Distance: " .. _G_Distance .. " Studs"
-DistLabel.Font = Enum.Font.Gotham
-DistLabel.TextSize = 11
-DistLabel.TextXAlignment = Enum.TextXAlignment.Left
-DistLabel.Parent = MainFrame
+local SliderBG = Instance.new("TextButton")
+SliderBG.Size = UDim2.new(0.85, 0, 0, 12)
+SliderBG.Position = UDim2.new(0.075, 0, 0, 135)
+SliderBG.BackgroundColor3 = Color3.fromRGB(50, 50, 60)
+SliderBG.Text = ""
+SliderBG.Parent = MainFrame
+Instance.new("UICorner", SliderBG).CornerRadius = UDim.new(0, 5)
 
-local DistBG = Instance.new("TextButton")
-DistBG.Size = UDim2.new(0.9, 0, 0, 8)
-DistBG.Position = UDim2.new(0.05, 0, 0, 105)
-DistBG.BackgroundColor3 = Color3.fromRGB(45, 45, 55)
-DistBG.Text = ""
-DistBG.Parent = MainFrame
-Instance.new("UICorner", DistBG).CornerRadius = UDim.new(0, 4)
+local SliderFill = Instance.new("Frame")
+SliderFill.Size = UDim2.new(_G_Distance / 25, 0, 1, 0)
+SliderFill.BackgroundColor3 = Color3.fromRGB(0, 160, 255)
+SliderFill.BorderSizePixel = 0
+SliderFill.Parent = SliderBG
+Instance.new("UICorner", SliderFill).CornerRadius = UDim.new(0, 5)
 
-local DistFill = Instance.new("Frame")
-DistFill.Size = UDim2.new((_G_Distance - 5) / 25, 0, 1, 0)
-DistFill.BackgroundColor3 = Color3.fromRGB(0, 160, 255)
-DistFill.BorderSizePixel = 0
-DistFill.Parent = DistBG
-Instance.new("UICorner", DistFill).CornerRadius = UDim.new(0, 4)
-
--- สไลเดอร์หน่วงเวลาสกิล
-local DelayLabel = Instance.new("TextLabel")
-DelayLabel.Size = UDim2.new(0.9, 0, 0, 20)
-DelayLabel.Position = UDim2.new(0.05, 0, 0, 125)
-DelayLabel.BackgroundTransparency = 1
-DelayLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
-DelayLabel.Text = "Skill Loop Delay: " .. string.format("%.1f", _G_SkillDelay) .. "s"
-DelayLabel.Font = Enum.Font.Gotham
-DelayLabel.TextSize = 11
-DelayLabel.TextXAlignment = Enum.TextXAlignment.Left
-DelayLabel.Parent = MainFrame
-
-local DelayBG = Instance.new("TextButton")
-DelayBG.Size = UDim2.new(0.9, 0, 0, 8)
-DelayBG.Position = UDim2.new(0.05, 0, 0, 145)
-DelayBG.BackgroundColor3 = Color3.fromRGB(45, 45, 55)
-DelayBG.Text = ""
-DelayBG.Parent = MainFrame
-Instance.new("UICorner", DelayBG).CornerRadius = UDim.new(0, 4)
-
-local DelayFill = Instance.new("Frame")
-DelayFill.Size = UDim2.new((_G_SkillDelay - 0.1) / 2.9, 0, 1, 0)
-DelayFill.BackgroundColor3 = Color3.fromRGB(255, 160, 0)
-DelayFill.BorderSizePixel = 0
-DelayFill.Parent = DelayBG
-Instance.new("UICorner", DelayFill).CornerRadius = UDim.new(0, 4)
-
--- ระบบผูกปุ่มและการเซฟ
-FarmBtn.MouseButton1Click:Connect(function()
+-- [[ 5. เชื่อมต่อระบบ ]]
+ToggleBtn.MouseButton1Click:Connect(function()
     _G_Farming = not _G_Farming
-    FarmBtn.BackgroundColor3 = _G_Farming and Color3.fromRGB(40, 180, 40) or Color3.fromRGB(180, 40, 40)
-    FarmBtn.Text = "FARM: " .. (_G_Farming and "ON" or "OFF")
-end)
-
-SkillBtn.MouseButton1Click:Connect(function()
-    _G_AutoSkill = not _G_AutoSkill
-    SkillBtn.BackgroundColor3 = _G_AutoSkill and Color3.fromRGB(40, 180, 40) or Color3.fromRGB(180, 40, 40)
-    SkillBtn.Text = "SKILL: " .. (_G_AutoSkill and "ON" or "OFF")
-end)
-
-local dragDist, dragDelay = false, false
-DistBG.MouseButton1Down:Connect(function() dragDist = true end)
-DelayBG.MouseButton1Down:Connect(function() dragDelay = true end)
-
-UserInputService.InputEnded:Connect(function(input)
-    if input.UserInputType == Enum.UserInputType.MouseButton1 then 
-        if dragDist or dragDelay then SaveSettings() end
-        dragDist, dragDelay = false, false 
+    if _G_Farming then
+        ToggleBtn.BackgroundColor3 = Color3.fromRGB(40, 180, 40)
+        ToggleBtn.Text = "AUTO FARM: ON"
+        task.spawn(StartAutoFarm)
+    else
+        ToggleBtn.BackgroundColor3 = Color3.fromRGB(180, 40, 40)
+        ToggleBtn.Text = "AUTO FARM: OFF"
     end
 end)
 
+local dragging = false
+SliderBG.MouseButton1Down:Connect(function() dragging = true end)
+UserInputService.InputEnded:Connect(function(input)
+    if input.UserInputType == Enum.UserInputType.MouseButton1 then dragging = false end
+end)
+
 UserInputService.InputChanged:Connect(function(input)
-    if input.UserInputType == Enum.UserInputType.MouseMovement then
-        local mouseX = UserInputService:GetMouseLocation().X
-        if dragDist then
-            local p = math.clamp((mouseX - DistBG.AbsolutePosition.X) / DistBG.AbsoluteSize.X, 0, 1)
-            _G_Distance = math.floor(5 + (p * 25))
-            DistFill.Size = UDim2.new(p, 0, 1, 0)
-            DistLabel.Text = "Back-TP Distance: " .. _G_Distance .. " Studs"
-        end
-        if dragDelay then
-            local p = math.clamp((mouseX - DelayBG.AbsolutePosition.X) / DelayBG.AbsoluteSize.X, 0, 1)
-            _G_SkillDelay = 0.1 + (p * 2.9)
-            DelayFill.Size = UDim2.new(p, 0, 1, 0)
-            DelayLabel.Text = "Skill Loop Delay: " .. string.format("%.1f", _G_SkillDelay) .. "s"
-        end
+    if dragging and input.UserInputType == Enum.UserInputType.MouseMovement then
+        local mousePos = UserInputService:GetMouseLocation().X
+        local sliderPos = SliderBG.AbsolutePosition.X
+        local sliderSize = SliderBG.AbsoluteSize.X
+        
+        local percent = math.clamp((mousePos - sliderPos) / sliderSize, 0, 1)
+        _G_Distance = math.floor(percent * 25)
+        
+        SliderFill.Size = UDim2.new(percent, 0, 1, 0)
+        SliderLabel.Text = "TP Distance: " .. _G_Distance
     end
 end)
