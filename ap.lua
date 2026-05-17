@@ -1,7 +1,7 @@
 -- [[ 1. ตัวแปรและบริการระบบ ]]
 local Players = game:GetService("Players")
 local Workspace = game:GetService("Workspace")
-local ReplicatedStorage = game:GetService("Storage") or game:GetService("ReplicatedStorage")
+local ReplicatedStorage = game:GetService("ReplicatedStorage") -- แก้ไขจุดที่ทำให้ Error แล้ว
 local VIM = game:GetService("VirtualInputManager")
 local UserInputService = game:GetService("UserInputService")
 local HttpService = game:GetService("HttpService")
@@ -9,42 +9,39 @@ local HttpService = game:GetService("HttpService")
 local LocalPlayer = Players.LocalPlayer
 local configFileName = "LunaHub_DelaySave.json"
 
--- บังคับเปิดสถานะเหล่านี้เสมอ เพื่อให้ข้ามมิติแล้วฟาร์มต่อทันที
+-- บังคับเปิดสถานะเหล่านี้เสมอ
 _G_Farming = true
 _G_AutoSkill = true
 _G_MagnetItems = true 
 
--- ค่าตัวเลขเริ่มต้น (จะถูกทับถ้าเคยรูดเซฟไว้)
+-- ค่าเริ่มต้น
 _G_Distance = 7        
-_G_SkillDelay = 0.3   
+_G_SkillDelay = 0.5   
 
--- [[ 2. ระบบ Save / Load (จำแค่ตัวเลข Slider) ]]
+-- [[ 2. ระบบ Save / Load แบบปลอดภัย 100% ]]
 local function SaveSettings()
-    if writefile then
+    if type(writefile) == "function" then
         pcall(function()
-            -- เซฟแค่ 2 ค่านี้เท่านั้น
-            local data = {
-                Distance = _G_Distance,
-                SkillDelay = _G_SkillDelay
-            }
+            local data = { Distance = _G_Distance, SkillDelay = _G_SkillDelay }
             writefile(configFileName, HttpService:JSONEncode(data))
         end)
     end
 end
 
 local function LoadSettings()
-    if isfile and isfile(configFileName) and readfile then
+    if type(isfile) == "function" and type(readfile) == "function" then
         pcall(function()
-            local result = HttpService:JSONDecode(readfile(configFileName))
-            if result then
-                _G_Distance = result.Distance or 7
-                _G_SkillDelay = result.SkillDelay or 0.5
+            if isfile(configFileName) then
+                local result = HttpService:JSONDecode(readfile(configFileName))
+                if result then
+                    _G_Distance = result.Distance or 7
+                    _G_SkillDelay = result.SkillDelay or 0.5
+                end
             end
         end)
     end
 end
 
--- โหลดค่าตัวเลขที่เคยตั้งไว้ทันที
 LoadSettings()
 
 -- [[ 3. ฟังก์ชันจำลองคีย์บอร์ด ]]
@@ -67,7 +64,6 @@ task.spawn(function()
             local zones = Workspace:FindFirstChild("Zones")
             local zombiesFolder = Workspace:FindFirstChild("Zombies")
 
-            -- สถานะ: อยู่หน้า Lobbyหลัก
             if zones and zones:FindFirstChild("RaidShop") then
                 pcall(function()
                     local platform = Workspace:WaitForChild("Platforms", 2):WaitForChild("Platform", 2)
@@ -82,7 +78,6 @@ task.spawn(function()
                 task.wait(5)
                 continue
             
-            -- สถานะ: จบเกม -> กด Play Again
             elseif not zombiesFolder or #zombiesFolder:GetChildren() == 0 then
                 task.wait(2)
                 if _G_Farming and (not Workspace:FindFirstChild("Zombies") or #Workspace.Zombies:GetChildren() == 0) and not (Workspace:FindFirstChild("Zones") and Workspace.Zones:FindFirstChild("RaidShop")) then
@@ -95,7 +90,6 @@ task.spawn(function()
                     task.wait(5)
                 end
 
-            -- สถานะ: มอนสเตอร์เกิด -> วาปตีปกติ
             elseif zombiesFolder and myRoot then
                 for _, mob in pairs(zombiesFolder:GetChildren()) do
                     if not _G_Farming then break end
@@ -159,7 +153,7 @@ task.spawn(function()
     end
 end)
 
--- [[ 7. GUI (ดีไซน์เดิม) ]]
+-- [[ 7. GUI ]]
 local UI_Parent = (pcall(function() return game:GetService("CoreGui").Name end) and game:GetService("CoreGui")) or LocalPlayer:WaitForChild("PlayerGui")
 if UI_Parent:FindFirstChild("LunaHubV13") then UI_Parent.LunaHubV13:Destroy() end
 
@@ -181,13 +175,12 @@ local Title = Instance.new("TextLabel")
 Title.Size = UDim2.new(1, 0, 0, 35)
 Title.BackgroundColor3 = Color3.fromRGB(35, 35, 45)
 Title.TextColor3 = Color3.fromRGB(255, 255, 255)
-Title.Text = "🌙 LUNA HUB V13 | MEMORY"
+Title.Text = "🌙 LUNA HUB V13.1 | HOTFIX"
 Title.Font = Enum.Font.GothamBold
 Title.TextSize = 13
 Title.Parent = MainFrame
 Instance.new("UICorner", Title).CornerRadius = UDim.new(0, 10)
 
--- ปุ่มต่างๆ (ตั้งค่าเป็นสีเขียวตลอดเวลาเพราะล็อกให้เปิดออโต้)
 local FarmBtn = Instance.new("TextButton")
 FarmBtn.Size = UDim2.new(0.9, 0, 0, 30)
 FarmBtn.Position = UDim2.new(0.05, 0, 0, 45)
@@ -221,7 +214,6 @@ MagnetBtn.TextSize = 11
 MagnetBtn.Parent = MainFrame
 Instance.new("UICorner", MagnetBtn).CornerRadius = UDim.new(0, 6)
 
--- Slider 1: Distance
 local DistLabel = Instance.new("TextLabel")
 DistLabel.Size = UDim2.new(0.9, 0, 0, 20)
 DistLabel.Position = UDim2.new(0.05, 0, 0, 155)
@@ -248,7 +240,6 @@ DistFill.BorderSizePixel = 0
 DistFill.Parent = DistBG
 Instance.new("UICorner", DistFill).CornerRadius = UDim.new(0, 4)
 
--- Slider 2: Delay
 local DelayLabel = Instance.new("TextLabel")
 DelayLabel.Size = UDim2.new(0.9, 0, 0, 20)
 DelayLabel.Position = UDim2.new(0.05, 0, 0, 195)
@@ -275,7 +266,6 @@ DelayFill.BorderSizePixel = 0
 DelayFill.Parent = DelayBG
 Instance.new("UICorner", DelayFill).CornerRadius = UDim.new(0, 4)
 
--- [[ 8. ผูกลอจิกปุ่ม (ปิดฟังก์ชันเซฟจากปุ่ม) ]]
 FarmBtn.MouseButton1Click:Connect(function()
     _G_Farming = not _G_Farming
     FarmBtn.BackgroundColor3 = _G_Farming and Color3.fromRGB(40, 180, 40) or Color3.fromRGB(180, 40, 40)
@@ -300,9 +290,7 @@ DelayBG.MouseButton1Down:Connect(function() dragDelay = true end)
 
 UserInputService.InputEnded:Connect(function(input)
     if input.UserInputType == Enum.UserInputType.MouseButton1 then 
-        if dragDist or dragDelay then 
-            SaveSettings() -- เซฟแค่ตอนที่ปล่อยเมาส์จาก Slider
-        end 
+        if dragDist or dragDelay then SaveSettings() end
         dragDist, dragDelay = false, false 
     end
 end)
