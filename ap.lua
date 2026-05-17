@@ -1,6 +1,7 @@
 -- [[ 1. ตัวแปรและบริการระบบ ]]
 local Players = game:GetService("Players")
 local Workspace = game:GetService("Workspace")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local VIM = game:GetService("VirtualInputManager")
 local UserInputService = game:GetService("UserInputService")
 local HttpService = game:GetService("HttpService")
@@ -8,15 +9,15 @@ local HttpService = game:GetService("HttpService")
 local LocalPlayer = Players.LocalPlayer
 local configFileName = "LunaHub_CoreSave.json"
 
--- บังคับเปิดระบบทันทีที่โหลดเข้าแมพ (Autoexec Support)
+-- บังคับเปิดระบบฟาร์มและสกิลทันทีเมื่อย้ายมิติ (Autoexec)
 _G_Farming = true
 _G_AutoSkill = true
 
--- ค่าเริ่มต้นของสไลเดอร์ (จะถูกทับถ้ามีไฟล์เซฟเก่า)
+-- ค่าเริ่มต้นของสไลเดอร์ (จะดึงจากไฟล์เซฟถ้าเคยรูดไว้)
 _G_Distance = 7        
 _G_SkillDelay = 0.5   
 
--- [[ 2. ระบบ Save / Load จดจำเฉพาะค่าสไลเดอร์ ]]
+-- [[ 2. ระบบ Save / Load จำเฉพาะค่าสไลเดอร์ ]]
 local function SaveSettings()
     if type(writefile) == "function" then
         pcall(function()
@@ -51,66 +52,80 @@ local function PressKey(key)
     end)
 end
 
--- [[ 4. ฟังก์ชัน ScanUniverse: สแกนเป้าหมายที่มีชีวิตทั่วทั้งแมพ ]]
-local function GetUniversalTarget()
-    -- ค้นหาในโฟลเดอร์ Zombies ก่อนเพื่อความรวดเร็วของระบบ
-    local zombiesFolder = Workspace:FindFirstChild("Zombies")
-    if zombiesFolder then
-        for _, mob in pairs(zombiesFolder:GetChildren()) do
-            local hum = mob:FindFirstChildOfClass("Humanoid")
-            local root = mob:FindFirstChild("HumanoidRootPart") or mob:FindFirstChild("Torso") or mob.PrimaryPart
-            if hum and hum.Health > 0 and root then
-                return root, hum
-            end
-        end
-    end
-
-    -- เจาะสแกน Model ทั้งพื้นที่ Workspace หากตัวเกมซ่อนมอนสเตอร์ไว้ด้านนอก
-    for _, obj in pairs(Workspace:GetChildren()) do
-        if obj:IsA("Model") and obj ~= LocalPlayer.Character and not Players:GetPlayerFromCharacter(obj) then
-            if obj.Name ~= "Platforms" and obj.Name ~= "Zones" then
-                local hum = obj:FindFirstChildOfClass("Humanoid")
-                local root = obj:FindFirstChild("HumanoidRootPart") or obj:FindFirstChild("Torso") or obj.PrimaryPart or obj:FindFirstChildWhichIsA("BasePart", true)
-                if hum and hum.Health > 0 and root then
-                    return root, hum
+-- [[ 4. ฟังก์ชันตรวจสอบหน้าต่าง UI จบเกมจริงๆ เพื่อความเสถียร ]]
+local function IsMatchReallyOver()
+    local playerGui = LocalPlayer:FindFirstChildOfClass("PlayerGui")
+    if not playerGui then return false end
+    local isOver = false
+    pcall(function()
+        for _, v in pairs(playerGui:GetDescendants()) do
+            if v:IsA("TextLabel") or v:IsA("TextButton") then
+                local t = v.Text:lower()
+                if t:find("again") or t:find("replay") or t:find("victory") or t:find("defeat") or t:find("reward") or t:find("retry") then
+                    if v.Visible then isOver = true break end
                 end
             end
         end
-    end
-    return nil, nil
+    end)
+    return isOver
 end
 
--- [[ 5. ลูปหลัก: ระบบวาปฟาร์มเกาะหลังมอนสเตอร์ ]]
+-- [[ 5. ลูปหลัก: เจาะจงโฟลเดอร์ Zombies อย่างเดียว + ระบบ Replay ]]
 task.spawn(function()
     while true do
         task.wait()
         if _G_Farming then
             local char = LocalPlayer.Character
             local myRoot = char and char:FindFirstChild("HumanoidRootPart")
-            
-            -- ดึงพิกัดเป้าหมายจากระบบสแกนรอบโลก
-            local targetRoot, targetHum = GetUniversalTarget()
+            local zombiesFolder = Workspace:FindFirstChild("Zombies")
 
-            if targetRoot and targetHum and myRoot then
-                -- เกาะติดวาปไปด้านหลังมอนสเตอร์ตัวนั้นจนกว่าเลือดจะเหลือ 0
-                while _G_Farming and targetRoot and targetHum and targetHum.Health > 0 do
-                    task.wait()
-                    if not LocalPlayer.Character or not LocalPlayer.Character:FindFirstChild("HumanoidRootPart") then break end
-                    myRoot.CFrame = targetRoot.CFrame * CFrame.new(0, 0, _G_Distance)
+            if zombiesFolder and myRoot then
+                local mobs = zombiesFolder:GetChildren()
+
+                if #mobs > 0 then
+                    -- โฟกัสกวาดเป้าหมายที่ดรอปเข้ามาอยู่ในโฟลเดอร์ Zombies เท่านั้น
+                    for _, mob in pairs(mobs) do
+                        if not _G_Farming then break end
+                        
+                        -- ค้นหาชิ้นส่วนและระบบเลือดของมอนสเตอร์ตัวนั้นๆ
+                        local targetPart = mob:FindFirstChild("HumanoidRootPart") or mob:FindFirstChild("Torso") or mob.PrimaryPart or mob:FindFirstChildWhichIsA("BasePart", true)
+                        local targetHum = mob:FindFirstChildOfClass("Humanoid")
+
+                        local function isAlive()
+                            if not mob or not mob.Parent then return false end
+                            if targetHum then return targetHum.Health > 0 end
+                            return true
+                        end
+
+                        -- วาร์ปเกาะติดด้านหลังเพื่อโจมตีจนกว่ามอนสเตอร์จะตาย
+                        while _G_Farming and targetPart and isAlive() do
+                            task.wait()
+                            if not LocalPlayer.Character or not LocalPlayer.Character:FindFirstChild("HumanoidRootPart") then break end
+                            myRoot.CFrame = targetPart.CFrame * CFrame.new(0, 0, _G_Distance)
+                        end
+                    end
+                else
+                    -- ถ้าโฟลเดอร์ Zombies ว่างเปล่า และระบบขึ้นหน้าต่างจบด่าน -> กดเริ่มใหม่ทันที
+                    if IsMatchReallyOver() then
+                        pcall(function()
+                            local remote = ReplicatedStorage:WaitForChild("Assets", 2):WaitForChild("Remotes", 2):WaitForChild("Interact", 2)
+                            if remote then remote:FireServer("PlayAgain") end
+                        end)
+                        task.wait(5) -- คูลดาวน์หน่วงเวลากันส่งรีโมทซ้ำซ้อน
+                    end
                 end
             end
         end
     end
 end)
 
--- [[ 6. ลูปที่ 2: ระบบ Auto Skill กดสกิลวนลูปอัตโนมัติ ]]
+-- [[ 6. ลูปที่ 2: ระบบ Auto Skill จะทำงานเมื่อตรวจพบมอนสเตอร์ในโฟลเดอร์ Zombies เท่านั้น ]]
 task.spawn(function()
     while true do
         task.wait()
         if _G_Farming and _G_AutoSkill then
-            -- จะกดยิงสกิลก็ต่อเมื่อตรวจเจอเป้าหมายมอนสเตอร์ในเซิร์ฟเวอร์เท่านั้น
-            local targetRoot, targetHum = GetUniversalTarget()
-            if targetRoot and targetHum then
+            local zombiesFolder = Workspace:FindFirstChild("Zombies")
+            if zombiesFolder and #zombiesFolder:GetChildren() > 0 then
                 task.spawn(function() PressKey("E") end)
                 task.spawn(function() PressKey("Z") end)
                 task.spawn(function() PressKey("X") end)
@@ -121,16 +136,16 @@ task.spawn(function()
     end
 end)
 
--- [[ 7. การสร้าง GUI V19 (ดีไซน์มินิมอล ขนาดกะทัดรัด ไม่รกสายตา UX ดี) ]]
+-- [[ 7. การสร้าง GUI V20 ]]
 local UI_Parent = (pcall(function() return game:GetService("CoreGui").Name end) and game:GetService("CoreGui")) or LocalPlayer:WaitForChild("PlayerGui")
-if UI_Parent:FindFirstChild("LunaHubV19") then UI_Parent.LunaHubV19:Destroy() end
+if UI_Parent:FindFirstChild("LunaHubV20") then UI_Parent.LunaHubV20:Destroy() end
 
 local ScreenGui = Instance.new("ScreenGui")
-ScreenGui.Name = "LunaHubV19"
+ScreenGui.Name = "LunaHubV20"
 ScreenGui.Parent = UI_Parent
 
 local MainFrame = Instance.new("Frame")
-MainFrame.Size = UDim2.new(0, 280, 0, 185) -- หดขนาดเฟรมลงเหลือสั้นกระชับพอดีปุ่ม
+MainFrame.Size = UDim2.new(0, 280, 0, 185)
 MainFrame.Position = UDim2.new(0.5, -140, 0.5, -92)
 MainFrame.BackgroundColor3 = Color3.fromRGB(20, 20, 25)
 MainFrame.BorderSizePixel = 0
@@ -143,7 +158,7 @@ local Title = Instance.new("TextLabel")
 Title.Size = UDim2.new(1, 0, 0, 35)
 Title.BackgroundColor3 = Color3.fromRGB(35, 35, 45)
 Title.TextColor3 = Color3.fromRGB(255, 255, 255)
-Title.Text = "🌙 LUNA HUB V19 | PURE CORE"
+Title.Text = "🌙 LUNA HUB V20 | ZOMBIES ONLY"
 Title.Font = Enum.Font.GothamBold
 Title.TextSize = 13
 Title.Parent = MainFrame
@@ -225,7 +240,7 @@ DelayFill.BorderSizePixel = 0
 DelayFill.Parent = DelayBG
 Instance.new("UICorner", DelayFill).CornerRadius = UDim.new(0, 4)
 
--- [[ 8. ระบบผูกปุ่มและการเซฟ ]]
+-- ระบบผูกปุ่มและการเซฟ
 FarmBtn.MouseButton1Click:Connect(function()
     _G_Farming = not _G_Farming
     FarmBtn.BackgroundColor3 = _G_Farming and Color3.fromRGB(40, 180, 40) or Color3.fromRGB(180, 40, 40)
