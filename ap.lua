@@ -16,7 +16,7 @@ _G_MagnetItems = true
 
 -- ค่าเริ่มต้นของสไลเดอร์ (จะดึงจากไฟล์เซฟถ้ามี)
 _G_Distance = 7        
-_G_SkillDelay = 0.5   
+_G_SkillDelay = 0.1   
 
 -- [[ 2. ระบบ Save / Load จำเฉพาะค่าสไลเดอร์ ]]
 local function SaveSettings()
