@@ -6,31 +6,44 @@ local VIM = game:GetService("VirtualInputManager")
 local UserInputService = game:GetService("UserInputService")
 
 local LocalPlayer = Players.LocalPlayer
-local _G_Farming = false
-local _G_AutoSkill = false
-local _G_Distance = 7       
-local _G_SkillDelay = 1.0   
 
--- [[ 2. ฟังก์ชันจำลองการกดสกิล ]]
-local function CastSkill(key)
+-- ค่าเริ่มต้น (สำหรับ Autoexec)
+_G_Farming = true
+_G_AutoSkill = true
+_G_BringMobs = true -- ระบบใหม่: รวบมอน
+_G_Distance = 15    -- ปรับระยะเริ่มต้นให้ไกลขึ้นนิดนึง เพราะมอนจะมากองรวมกันตรงหน้าเรา (กันเราโดนดาเมจ)
+_G_SkillDelay = 0.5 -- ปรับให้สับสกิลไวขึ้น  
+
+-- [[ 2. ฟังก์ชันจำลองปุ่มและเมาส์ ]]
+local function PressKey(key)
     pcall(function()
         VIM:SendKeyEvent(true, Enum.KeyCode[key], false, game)
-        task.wait(0.05)
+        task.wait(0.02)
         VIM:SendKeyEvent(false, Enum.KeyCode[key], false, game)
     end)
 end
 
--- [[ 3. ลอจิกหลัก (Auto Lobby & Auto Farm) ]]
+local function ClickMouse()
+    pcall(function()
+        VIM:SendMouseButtonEvent(0, 0, 0, true, game, 0)
+        task.wait(0.01)
+        VIM:SendMouseButtonEvent(0, 0, 0, false, game, 0)
+    end)
+end
+
+-- [[ 3. ลอจิกหลัก (Auto Lobby + Bring Mobs) ]]
 local function StartAutoFarm()
     while _G_Farming do
         task.wait()
         
+        local char = LocalPlayer.Character
+        local myRoot = char and char:FindFirstChild("HumanoidRootPart")
+        
         -- =======================================
-        -- โหมดที่ 1: ตรวจสอบการอยู่หน้า Lobby
+        -- โหมด 1: ตรวจสอบหน้า Lobby และสร้างห้อง
         -- =======================================
         local zones = Workspace:FindFirstChild("Zones")
         if zones and zones:FindFirstChild("RaidShop") then
-            -- ใช้ pcall และกำหนดเวลา WaitForChild ไม่ให้สคริปต์ค้าง
             pcall(function()
                 local platforms = Workspace:WaitForChild("Platforms", 3)
                 if not platforms then return end
@@ -56,53 +69,62 @@ local function StartAutoFarm()
                     interactRemote:FireServer(unpack(args))
                 end
             end)
-            
-            -- หน่วงเวลา 5 วินาทีหลังสร้างห้อง เพื่อรอเกมโหลดเข้าแมพ (กันยิงรีโมทรัวๆ โดนเตะ)
             task.wait(5)
-            continue -- วนลูปเช็คสถานะใหม่
+            continue 
         end
 
         -- =======================================
-        -- โหมดที่ 2: ระบบฟาร์มมอนสเตอร์ (เมื่อเข้าห้องแล้ว)
+        -- โหมด 2: ระบบฟาร์มมอนสเตอร์ (Bring Mobs / TP)
         -- =======================================
         local zombiesFolder = Workspace:FindFirstChild("Zombies")
-        if zombiesFolder then
-            for _, mob in pairs(zombiesFolder:GetChildren()) do
-                if not _G_Farming then break end
+        if zombiesFolder and myRoot then
+            
+            if _G_BringMobs then
+                -- ท่าไม้ตาย: ดูดมอนทุกตัวมากองตรงหน้า
+                local mobsAlive = false
+                
+                for _, mob in pairs(zombiesFolder:GetChildren()) do
+                    local targetPart = mob:FindFirstChild("HumanoidRootPart") or mob:FindFirstChild("Torso") or mob.PrimaryPart or mob:FindFirstChildWhichIsA("BasePart", true)
+                    local targetHum = mob:FindFirstChildOfClass("Humanoid")
 
-                local targetPart = mob:FindFirstChild("HumanoidRootPart") or mob:FindFirstChild("Torso") or mob.PrimaryPart or mob:FindFirstChildWhichIsA("BasePart", true)
-                local targetHum = mob:FindFirstChildOfClass("Humanoid")
-
-                local function isAlive()
-                    if not mob or not mob.Parent then return false end
-                    if targetHum then return targetHum.Health > 0 end
-                    return true
+                    if targetPart and targetHum and targetHum.Health > 0 then
+                        mobsAlive = true
+                        -- วาปมอนสเตอร์มาที่ด้านหน้าของเรา (-Z คือด้านหน้า)
+                        targetPart.CFrame = myRoot.CFrame * CFrame.new(0, 0, -_G_Distance)
+                        -- ล็อกความเร็วมอนสเตอร์ไม่ให้กระเด็นหรือเดินหนี
+                        targetPart.Velocity = Vector3.new(0,0,0)
+                        targetPart.RotVelocity = Vector3.new(0,0,0)
+                    end
                 end
+                
+                -- ถ้ามีมอนสเตอร์หลงเหลืออยู่ ให้เราสาดสกิลรัวๆ
+                if mobsAlive then
+                    ClickMouse()
+                    if _G_AutoSkill then
+                        PressKey("E") PressKey("Z") PressKey("X") PressKey("C")
+                    end
+                    task.wait(_G_SkillDelay)
+                end
+                
+            else
+                -- ลอจิกเดิม: วาปไปตีทีละตัว (กรณีปิดปุ่มดึงมอน)
+                for _, mob in pairs(zombiesFolder:GetChildren()) do
+                    if not _G_Farming or _G_BringMobs then break end
+                    local targetPart = mob:FindFirstChild("HumanoidRootPart") or mob:FindFirstChild("Torso") or mob:FindFirstChildWhichIsA("BasePart", true)
+                    local targetHum = mob:FindFirstChildOfClass("Humanoid")
 
-                if not targetPart then continue end 
-
-                while _G_Farming and isAlive() do
-                    task.wait()
-                    
-                    local char = LocalPlayer.Character
-                    if not char then break end
-                    local myRoot = char:FindFirstChild("HumanoidRootPart")
-                    local myHum = char:FindFirstChild("Humanoid")
-
-                    if myRoot and myHum and myHum.Health > 0 then
-                        -- วาปไปด้านหลังตามระยะ
+                    while _G_Farming and not _G_BringMobs and targetPart and targetHum and targetHum.Health > 0 do
+                        task.wait()
+                        if not LocalPlayer.Character or not LocalPlayer.Character:FindFirstChild("HumanoidRootPart") then break end
+                        
                         myRoot.CFrame = targetPart.CFrame * CFrame.new(0, 0, _G_Distance)
-                        task.wait(0.1)
+                        task.wait(0.05)
 
+                        ClickMouse()
                         if _G_AutoSkill then
-                            CastSkill("Z")
-                            CastSkill("X")
-                            CastSkill("C")
+                            PressKey("E") PressKey("Z") PressKey("X") PressKey("C")
                         end
-
                         task.wait(_G_SkillDelay)
-                    else
-                        break
                     end
                 end
             end
@@ -110,17 +132,17 @@ local function StartAutoFarm()
     end
 end
 
--- [[ 4. การสร้าง GUI เน้น UX ใช้งานง่าย ]]
+-- [[ 4. GUI V8 (เพิ่มปุ่ม Bring Mobs) ]]
 local UI_Parent = (pcall(function() return game:GetService("CoreGui").Name end) and game:GetService("CoreGui")) or LocalPlayer:WaitForChild("PlayerGui")
-if UI_Parent:FindFirstChild("LunaHubV6") then UI_Parent.LunaHubV6:Destroy() end
+if UI_Parent:FindFirstChild("LunaHubV8") then UI_Parent.LunaHubV8:Destroy() end
 
 local ScreenGui = Instance.new("ScreenGui")
-ScreenGui.Name = "LunaHubV6"
+ScreenGui.Name = "LunaHubV8"
 ScreenGui.Parent = UI_Parent
 
 local MainFrame = Instance.new("Frame")
-MainFrame.Size = UDim2.new(0, 280, 0, 270)
-MainFrame.Position = UDim2.new(0.5, -140, 0.5, -135)
+MainFrame.Size = UDim2.new(0, 280, 0, 310) -- ขยายความสูงรองรับปุ่มใหม่
+MainFrame.Position = UDim2.new(0.5, -140, 0.5, -155)
 MainFrame.BackgroundColor3 = Color3.fromRGB(20, 20, 25)
 MainFrame.BorderSizePixel = 0
 MainFrame.Active = true
@@ -132,43 +154,55 @@ local Title = Instance.new("TextLabel")
 Title.Size = UDim2.new(1, 0, 0, 35)
 Title.BackgroundColor3 = Color3.fromRGB(35, 35, 45)
 Title.TextColor3 = Color3.fromRGB(255, 255, 255)
-Title.Text = "🌙 LUNA HUB V6 | AUTO LOBBY"
+Title.Text = "🌙 LUNA HUB V8 | BLACK HOLE"
 Title.Font = Enum.Font.GothamBold
-Title.TextSize = 14
+Title.TextSize = 13
 Title.Parent = MainFrame
 Instance.new("UICorner", Title).CornerRadius = UDim.new(0, 10)
 
--- ปุ่ม Farm
+-- ปุ่ม 1: Farm
 local FarmBtn = Instance.new("TextButton")
-FarmBtn.Size = UDim2.new(0.9, 0, 0, 35)
+FarmBtn.Size = UDim2.new(0.9, 0, 0, 30)
 FarmBtn.Position = UDim2.new(0.05, 0, 0, 45)
-FarmBtn.BackgroundColor3 = Color3.fromRGB(180, 40, 40)
+FarmBtn.BackgroundColor3 = Color3.fromRGB(40, 180, 40)
 FarmBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
-FarmBtn.Text = "AUTO START & FARM: OFF"
+FarmBtn.Text = "1. AUTO FARM: ON"
 FarmBtn.Font = Enum.Font.GothamBold
-FarmBtn.TextSize = 13
+FarmBtn.TextSize = 12
 FarmBtn.Parent = MainFrame
 Instance.new("UICorner", FarmBtn).CornerRadius = UDim.new(0, 6)
 
--- ปุ่ม Skill
+-- ปุ่ม 2: Skill
 local SkillBtn = Instance.new("TextButton")
-SkillBtn.Size = UDim2.new(0.9, 0, 0, 35)
-SkillBtn.Position = UDim2.new(0.05, 0, 0, 90)
-SkillBtn.BackgroundColor3 = Color3.fromRGB(180, 40, 40)
+SkillBtn.Size = UDim2.new(0.9, 0, 0, 30)
+SkillBtn.Position = UDim2.new(0.05, 0, 0, 80)
+SkillBtn.BackgroundColor3 = Color3.fromRGB(40, 180, 40)
 SkillBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
-SkillBtn.Text = "AUTO SKILL (Z,X,C): OFF"
+SkillBtn.Text = "2. AUTO SKILL (E,Z,X,C): ON"
 SkillBtn.Font = Enum.Font.GothamBold
-SkillBtn.TextSize = 13
+SkillBtn.TextSize = 12
 SkillBtn.Parent = MainFrame
 Instance.new("UICorner", SkillBtn).CornerRadius = UDim.new(0, 6)
 
--- Slider: ระยะห่าง
+-- ปุ่ม 3: Bring Mobs (รวบมอน)
+local BringBtn = Instance.new("TextButton")
+BringBtn.Size = UDim2.new(0.9, 0, 0, 30)
+BringBtn.Position = UDim2.new(0.05, 0, 0, 115)
+BringBtn.BackgroundColor3 = Color3.fromRGB(150, 40, 180) -- สีม่วงหลุมดำ
+BringBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+BringBtn.Text = "3. BRING MOBS (รวบมอน): ON"
+BringBtn.Font = Enum.Font.GothamBold
+BringBtn.TextSize = 12
+BringBtn.Parent = MainFrame
+Instance.new("UICorner", BringBtn).CornerRadius = UDim.new(0, 6)
+
+-- Slider 1: Distance
 local DistLabel = Instance.new("TextLabel")
 DistLabel.Size = UDim2.new(0.9, 0, 0, 20)
-DistLabel.Position = UDim2.new(0.05, 0, 0, 135)
+DistLabel.Position = UDim2.new(0.05, 0, 0, 155)
 DistLabel.BackgroundTransparency = 1
 DistLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
-DistLabel.Text = "Distance Barrier: " .. _G_Distance .. " Studs"
+DistLabel.Text = "Mob Distance: " .. _G_Distance .. " Studs"
 DistLabel.Font = Enum.Font.Gotham
 DistLabel.TextSize = 12
 DistLabel.TextXAlignment = Enum.TextXAlignment.Left
@@ -176,7 +210,7 @@ DistLabel.Parent = MainFrame
 
 local DistBG = Instance.new("TextButton")
 DistBG.Size = UDim2.new(0.9, 0, 0, 10)
-DistBG.Position = UDim2.new(0.05, 0, 0, 160)
+DistBG.Position = UDim2.new(0.05, 0, 0, 180)
 DistBG.BackgroundColor3 = Color3.fromRGB(45, 45, 55)
 DistBG.Text = ""
 DistBG.Parent = MainFrame
@@ -189,13 +223,13 @@ DistFill.BorderSizePixel = 0
 DistFill.Parent = DistBG
 Instance.new("UICorner", DistFill).CornerRadius = UDim.new(0, 4)
 
--- Slider: หน่วงเวลาสกิล
+-- Slider 2: Delay
 local DelayLabel = Instance.new("TextLabel")
 DelayLabel.Size = UDim2.new(0.9, 0, 0, 20)
-DelayLabel.Position = UDim2.new(0.05, 0, 0, 185)
+DelayLabel.Position = UDim2.new(0.05, 0, 0, 205)
 DelayLabel.BackgroundTransparency = 1
 DelayLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
-DelayLabel.Text = "Skill Cooldown Delay: " .. string.format("%.1f", _G_SkillDelay) .. "s"
+DelayLabel.Text = "Skill Delay: " .. string.format("%.1f", _G_SkillDelay) .. "s"
 DelayLabel.Font = Enum.Font.Gotham
 DelayLabel.TextSize = 12
 DelayLabel.TextXAlignment = Enum.TextXAlignment.Left
@@ -203,7 +237,7 @@ DelayLabel.Parent = MainFrame
 
 local DelayBG = Instance.new("TextButton")
 DelayBG.Size = UDim2.new(0.9, 0, 0, 10)
-DelayBG.Position = UDim2.new(0.05, 0, 0, 210)
+DelayBG.Position = UDim2.new(0.05, 0, 0, 230)
 DelayBG.BackgroundColor3 = Color3.fromRGB(45, 45, 55)
 DelayBG.Text = ""
 DelayBG.Parent = MainFrame
@@ -216,59 +250,62 @@ DelayFill.BorderSizePixel = 0
 DelayFill.Parent = DelayBG
 Instance.new("UICorner", DelayFill).CornerRadius = UDim.new(0, 4)
 
--- [[ 5. ผูกลอจิก GUI ]]
+-- คำเตือน
+local WarnLabel = Instance.new("TextLabel")
+WarnLabel.Size = UDim2.new(0.9, 0, 0, 40)
+WarnLabel.Position = UDim2.new(0.05, 0, 0, 255)
+WarnLabel.BackgroundTransparency = 1
+WarnLabel.TextColor3 = Color3.fromRGB(150, 150, 150)
+WarnLabel.Text = "Note: ถ้ารวบมอนแล้วมอนเด้งกลับ แปลว่าเซิร์ฟเวอร์ล็อค Network Ownership ให้ปิดโหมด 3"
+WarnLabel.Font = Enum.Font.Gotham
+WarnLabel.TextSize = 10
+WarnLabel.TextWrapped = true
+WarnLabel.Parent = MainFrame
+
+-- [[ 5. ผูกระบบ ]]
 FarmBtn.MouseButton1Click:Connect(function()
     _G_Farming = not _G_Farming
-    if _G_Farming then
-        FarmBtn.BackgroundColor3 = Color3.fromRGB(40, 180, 40)
-        FarmBtn.Text = "AUTO START & FARM: ON"
-        task.spawn(StartAutoFarm)
-    else
-        FarmBtn.BackgroundColor3 = Color3.fromRGB(180, 40, 40)
-        FarmBtn.Text = "AUTO START & FARM: OFF"
-    end
+    FarmBtn.BackgroundColor3 = _G_Farming and Color3.fromRGB(40, 180, 40) or Color3.fromRGB(180, 40, 40)
+    FarmBtn.Text = "1. AUTO FARM: " .. (_G_Farming and "ON" or "OFF")
+    if _G_Farming then task.spawn(StartAutoFarm) end
 end)
 
 SkillBtn.MouseButton1Click:Connect(function()
     _G_AutoSkill = not _G_AutoSkill
-    if _G_AutoSkill then
-        SkillBtn.BackgroundColor3 = Color3.fromRGB(40, 180, 40)
-        SkillBtn.Text = "AUTO SKILL (Z,X,C): ON"
-    else
-        SkillBtn.BackgroundColor3 = Color3.fromRGB(180, 40, 40)
-        SkillBtn.Text = "AUTO SKILL (Z,X,C): OFF"
-    end
+    SkillBtn.BackgroundColor3 = _G_AutoSkill and Color3.fromRGB(40, 180, 40) or Color3.fromRGB(180, 40, 40)
+    SkillBtn.Text = "2. AUTO SKILL (E,Z,X,C): " .. (_G_AutoSkill and "ON" or "OFF")
 end)
 
-local dragDist = false
-local dragDelay = false
+BringBtn.MouseButton1Click:Connect(function()
+    _G_BringMobs = not _G_BringMobs
+    BringBtn.BackgroundColor3 = _G_BringMobs and Color3.fromRGB(150, 40, 180) or Color3.fromRGB(180, 40, 40)
+    BringBtn.Text = "3. BRING MOBS (รวบมอน): " .. (_G_BringMobs and "ON" or "OFF")
+end)
 
+local dragDist, dragDelay = false, false
 DistBG.MouseButton1Down:Connect(function() dragDist = true end)
 DelayBG.MouseButton1Down:Connect(function() dragDelay = true end)
 
 UserInputService.InputEnded:Connect(function(input)
-    if input.UserInputType == Enum.UserInputType.MouseButton1 then 
-        dragDist = false 
-        dragDelay = false
-    end
+    if input.UserInputType == Enum.UserInputType.MouseButton1 then dragDist, dragDelay = false, false end
 end)
 
 UserInputService.InputChanged:Connect(function(input)
     if input.UserInputType == Enum.UserInputType.MouseMovement then
         local mouseX = UserInputService:GetMouseLocation().X
-        
         if dragDist then
-            local percent = math.clamp((mouseX - DistBG.AbsolutePosition.X) / DistBG.AbsoluteSize.X, 0, 1)
-            _G_Distance = math.floor(5 + (percent * 25))
-            DistFill.Size = UDim2.new(percent, 0, 1, 0)
-            DistLabel.Text = "Distance Barrier: " .. _G_Distance .. " Studs"
+            local p = math.clamp((mouseX - DistBG.AbsolutePosition.X) / DistBG.AbsoluteSize.X, 0, 1)
+            _G_Distance = math.floor(5 + (p * 25))
+            DistFill.Size = UDim2.new(p, 0, 1, 0)
+            DistLabel.Text = "Mob Distance: " .. _G_Distance .. " Studs"
         end
-        
         if dragDelay then
-            local percent = math.clamp((mouseX - DelayBG.AbsolutePosition.X) / DelayBG.AbsoluteSize.X, 0, 1)
-            _G_SkillDelay = 0.1 + (percent * 2.9)
-            DelayFill.Size = UDim2.new(percent, 0, 1, 0)
-            DelayLabel.Text = "Skill Cooldown Delay: " .. string.format("%.1f", _G_SkillDelay) .. "s"
+            local p = math.clamp((mouseX - DelayBG.AbsolutePosition.X) / DelayBG.AbsoluteSize.X, 0, 1)
+            _G_SkillDelay = 0.1 + (p * 2.9)
+            DelayFill.Size = UDim2.new(p, 0, 1, 0)
+            DelayLabel.Text = "Skill Delay: " .. string.format("%.1f", _G_SkillDelay) .. "s"
         end
     end
 end)
+
+task.spawn(StartAutoFarm)
