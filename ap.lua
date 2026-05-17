@@ -16,7 +16,7 @@ _G_MagnetItems = true
 
 -- ค่าเริ่มต้น
 _G_Distance = 7        
-_G_SkillDelay = 0.5   
+_G_SkillDelay = 0.1   
 
 -- [[ 2. ระบบ Save / Load แบบปลอดภัย 100% ]]
 local function SaveSettings()
