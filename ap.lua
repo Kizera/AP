@@ -16,7 +16,7 @@ _G_MagnetItems = true
 
 -- ค่าตัวเลขเริ่มต้น (จะถูกทับถ้าเคยรูดเซฟไว้)
 _G_Distance = 7        
-_G_SkillDelay = 0.5   
+_G_SkillDelay = 0.3   
 
 -- [[ 2. ระบบ Save / Load (จำแค่ตัวเลข Slider) ]]
 local function SaveSettings()
