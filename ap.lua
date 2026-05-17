@@ -1,88 +1,95 @@
--- [[ 1. ตัวแปรระบบ & บริการ ]]
+-- [[ 1. ตัวแปรระบบ ]]
 local Players = game:GetService("Players")
-local CoreGui = game:GetService("CoreGui")
 local RunService = game:GetService("RunService")
 local VIM = game:GetService("VirtualInputManager")
-
-local LocalPlayer = Players.LocalPlayer
 local Workspace = game:GetService("Workspace")
 
+local LocalPlayer = Players.LocalPlayer
 local _G_Farming = false
-local _G_Distance = 7 -- ระยะเริ่มต้น (ด้านหลัง)
+local _G_Distance = 7
 
--- [[ 2. ฟังก์ชันหลัก: จำลองการกดปุ่ม ]]
-local function PressKey(key)
-    VIM:SendKeyEvent(true, Enum.KeyCode[key], false, game)
-    task.wait(0.05)
-    VIM:SendKeyEvent(false, Enum.KeyCode[key], false, game)
+-- [[ 2. ฟังก์ชันจำลองการกดคีย์บอร์ด ]]
+local function PressSkill(key)
+    -- ใช้ pcall ดัก error เผื่อ Executor บางตัวไม่รองรับ VIM 100%
+    pcall(function()
+        VIM:SendKeyEvent(true, Enum.KeyCode[key], false, game)
+        task.wait(0.05)
+        VIM:SendKeyEvent(false, Enum.KeyCode[key], false, game)
+    end)
 end
 
--- [[ 3. ฟังก์ชันหลัก: ระบบฟาร์ม ]]
+-- [[ 3. ลอจิกฟาร์มแบบ ล็อกเป้าจนตาย ]]
 local function AutoFarm()
     while _G_Farming do
         task.wait()
         
-        -- ตรวจสอบว่าโฟลเดอร์ Zombies มีอยู่จริง
         local zombiesFolder = Workspace:FindFirstChild("Zombies")
         if not zombiesFolder then continue end
 
         for _, zombie in pairs(zombiesFolder:GetChildren()) do
             if not _G_Farming then break end
+            if not zombie:IsA("Model") then continue end
             
-            local zRoot = zombie:FindFirstChild("HumanoidRootPart")
+            -- รองรับมอนสเตอร์ทั้งแบบ R6 (Torso) และ R15 (HumanoidRootPart)
+            local zRoot = zombie:FindFirstChild("HumanoidRootPart") or zombie:FindFirstChild("Torso")
             local zHum = zombie:FindFirstChild("Humanoid")
-            local pRoot = LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
-
-            -- เช็คว่ามอนสเตอร์ยังมีชีวิตและเรามีตัวตน
-            if zRoot and zHum and zHum.Health > 0 and pRoot then
-                -- ล็อกเป้าและวาปไปด้านหลัง (แกน Z บวก คือด้านหลังใน Roblox)
-                pRoot.CFrame = zRoot.CFrame * CFrame.new(0, 0, _G_Distance)
+            
+            -- ลูปตีมอนสเตอร์ตัวนี้จนกว่าเลือดจะหมด
+            while _G_Farming and zRoot and zHum and zHum.Health > 0 do
+                task.wait()
                 
-                -- หน่วงเวลาเล็กน้อยให้เซิร์ฟเวอร์ซิงค์ตำแหน่ง
-                task.wait(0.1) 
+                -- รีเฟรชตัวละครเราตลอดเวลา ป้องกันสคริปต์พังตอนเราตาย
+                local char = LocalPlayer.Character
+                if not char then break end
+                local myRoot = char:FindFirstChild("HumanoidRootPart")
+                local myHum = char:FindFirstChild("Humanoid")
+                
+                if not myRoot or not myHum or myHum.Health <= 0 then break end
 
+                -- วาปไปด้านหลังมอนสเตอร์
+                myRoot.CFrame = zRoot.CFrame * CFrame.new(0, 0, _G_Distance)
+                
                 -- กดสกิล
-                PressKey("Z")
-                PressKey("X")
-                PressKey("C")
-
-                -- หน่วง 1 วินาทีหลังกดสกิลครบตามคำสั่ง
-                task.wait(1) 
+                PressSkill("Z")
+                PressSkill("X")
+                PressSkill("C")
+                
+                -- หน่วงเวลา 1 วินาที
+                task.wait(1)
             end
         end
     end
 end
 
--- [[ 4. การสร้าง GUI (Clean & Minimal) ]]
--- ล้าง GUI เก่าถ้ามีเพื่อกันการซ้อนทับ
-if CoreGui:FindFirstChild("LunaAutoFarm") then
-    CoreGui.LunaAutoFarm:Destroy()
+-- [[ 4. GUI (ป้องกันจอดำ/ดึงเข้า PlayerGui ถ้า CoreGui โดนบล็อก) ]]
+local UI_Parent = (pcall(function() return game:GetService("CoreGui").Name end) and game:GetService("CoreGui")) or LocalPlayer:WaitForChild("PlayerGui")
+
+if UI_Parent:FindFirstChild("LunaAutoFarmV2") then
+    UI_Parent.LunaAutoFarmV2:Destroy()
 end
 
 local ScreenGui = Instance.new("ScreenGui")
-ScreenGui.Name = "LunaAutoFarm"
-ScreenGui.Parent = CoreGui
+ScreenGui.Name = "LunaAutoFarmV2"
+ScreenGui.Parent = UI_Parent
 
 local MainFrame = Instance.new("Frame")
 MainFrame.Size = UDim2.new(0, 250, 0, 150)
 MainFrame.Position = UDim2.new(0.5, -125, 0.5, -75)
-MainFrame.BackgroundColor3 = Color3.fromRGB(30, 30, 35)
+MainFrame.BackgroundColor3 = Color3.fromRGB(25, 25, 30)
 MainFrame.BorderSizePixel = 0
 MainFrame.Active = true
-MainFrame.Draggable = true -- ให้ลากไปมาได้
+MainFrame.Draggable = true
 MainFrame.Parent = ScreenGui
 
--- หัวข้อ
 local Title = Instance.new("TextLabel")
 Title.Size = UDim2.new(1, 0, 0, 30)
-Title.BackgroundColor3 = Color3.fromRGB(45, 45, 50)
+Title.BackgroundColor3 = Color3.fromRGB(40, 40, 45)
 Title.TextColor3 = Color3.fromRGB(255, 255, 255)
-Title.Text = "Luna Hub | Auto Farm"
+Title.Text = "Luna Hub | Farm V2"
 Title.Font = Enum.Font.GothamBold
 Title.TextSize = 14
 Title.Parent = MainFrame
 
--- ปุ่ม Toggle
 local ToggleBtn = Instance.new("TextButton")
 ToggleBtn.Size = UDim2.new(0.8, 0, 0, 35)
 ToggleBtn.Position = UDim2.new(0.1, 0, 0, 45)
@@ -93,7 +100,6 @@ ToggleBtn.Font = Enum.Font.GothamBold
 ToggleBtn.TextSize = 14
 ToggleBtn.Parent = MainFrame
 
--- ระบบ Slider (รูดปรับระยะ)
 local SliderTitle = Instance.new("TextLabel")
 SliderTitle.Size = UDim2.new(1, 0, 0, 20)
 SliderTitle.Position = UDim2.new(0, 0, 0, 90)
@@ -112,26 +118,23 @@ SliderBG.Text = ""
 SliderBG.Parent = MainFrame
 
 local SliderFill = Instance.new("Frame")
-SliderFill.Size = UDim2.new(_G_Distance / 20, 0, 1, 0) -- เทียบสัดส่วนระยะสูงสุดที่ 20
+SliderFill.Size = UDim2.new(_G_Distance / 20, 0, 1, 0)
 SliderFill.BackgroundColor3 = Color3.fromRGB(80, 150, 255)
 SliderFill.Parent = SliderBG
 
--- [[ 5. ผูกระบบการทำงาน (Connections) ]]
-
--- ระบบเปิด/ปิด
+-- [[ 5. ผูกปุ่ม ]]
 ToggleBtn.MouseButton1Click:Connect(function()
     _G_Farming = not _G_Farming
     if _G_Farming then
         ToggleBtn.BackgroundColor3 = Color3.fromRGB(50, 200, 50)
         ToggleBtn.Text = "ON"
-        task.spawn(AutoFarm) -- แยก Thread ไม่ให้จอค้าง
+        task.spawn(AutoFarm)
     else
         ToggleBtn.BackgroundColor3 = Color3.fromRGB(200, 50, 50)
         ToggleBtn.Text = "OFF"
     end
 end)
 
--- ระบบเลื่อน Slider
 local UserInputService = game:GetService("UserInputService")
 local dragging = false
 
@@ -146,13 +149,9 @@ UserInputService.InputChanged:Connect(function(input)
         local sliderPos = SliderBG.AbsolutePosition.X
         local sliderSize = SliderBG.AbsoluteSize.X
         
-        -- คำนวณเปอร์เซ็นต์ (0 ถึง 1)
         local percent = math.clamp((mousePos - sliderPos) / sliderSize, 0, 1)
-        
-        -- ปรับระยะห่างสูงสุดที่ 20
         _G_Distance = math.floor(percent * 20) 
         
-        -- อัปเดต UI
         SliderFill.Size = UDim2.new(percent, 0, 1, 0)
         SliderTitle.Text = "Distance: " .. _G_Distance
     end
