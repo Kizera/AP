@@ -1,7 +1,7 @@
 -- [[ 1. ตัวแปรและบริการระบบ ]]
 local Players = game:GetService("Players")
 local Workspace = game:GetService("Workspace")
-local ReplicatedStorage = game:GetService("ReplicatedStorage") -- แก้ไขจุดที่ทำให้ Error แล้ว
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local VIM = game:GetService("VirtualInputManager")
 local UserInputService = game:GetService("UserInputService")
 local HttpService = game:GetService("HttpService")
@@ -9,16 +9,16 @@ local HttpService = game:GetService("HttpService")
 local LocalPlayer = Players.LocalPlayer
 local configFileName = "LunaHub_DelaySave.json"
 
--- บังคับเปิดสถานะเหล่านี้เสมอ
+-- บังคับเปิดสถานะฟาร์มและสกิลอัตโนมัติเมื่อย้ายมิติ (Autoexec)
 _G_Farming = true
 _G_AutoSkill = true
 _G_MagnetItems = true 
 
--- ค่าเริ่มต้น
+-- ค่าเริ่มต้นของสไลเดอร์
 _G_Distance = 7        
-_G_SkillDelay = 0.1   
+_G_SkillDelay = 0.5   
 
--- [[ 2. ระบบ Save / Load แบบปลอดภัย 100% ]]
+-- [[ 2. ระบบ Save / Load จำเฉพาะค่าสไลเดอร์ ]]
 local function SaveSettings()
     if type(writefile) == "function" then
         pcall(function()
@@ -53,7 +53,40 @@ local function PressKey(key)
     end)
 end
 
--- [[ 4. ลูปที่ 1: ระบบฟาร์ม, สร้างห้อง และ Auto Replay ]]
+-- [[ 4. ฟังก์ชันอัจฉริยะ: ตรวจจับ UI จบเกมบนหน้าจอจริง (กันบั๊กลูปตอนโหลดแมพ) ]]
+local function IsMatchReallyOver()
+    local playerGui = LocalPlayer:FindFirstChildOfClass("PlayerGui")
+    if not playerGui then return false end
+    
+    local isOver = false
+    pcall(function()
+        -- สแกนหาข้อความปุ่ม Replay หรือข้อความแจ้งเตือนจบเกมที่กำลังแสดงอยู่บนจอ
+        for _, v in pairs(playerGui:GetDescendants()) do
+            if v:IsA("TextLabel") or v:IsA("TextButton") then
+                local t = v.Text:lower()
+                if t:find("again") or t:find("replay") or t:find("victory") or t:find("defeat") or t:find("reward") then
+                    -- เช็คเชิงลึกว่ากรอบ UI นั้นเปิดแสดงผลอยู่จริงๆ ไม่ได้ซ่อนอยู่หลังบ้าน
+                    local current = v
+                    local isVisible = true
+                    while current and current:IsA("GuiObject") do
+                        if not current.Visible then
+                            isVisible = false
+                            break
+                        end
+                        current = current.Parent
+                    end
+                    if isVisible then
+                        isOver = true
+                        break
+                    end
+                end
+            end
+        end
+    end)
+    return isOver
+end
+
+-- [[ 5. ลูปหลัก: ระบบฟาร์ม, สร้างห้อง และ Auto Replay ]]
 task.spawn(function()
     while true do
         task.wait()
@@ -64,6 +97,7 @@ task.spawn(function()
             local zones = Workspace:FindFirstChild("Zones")
             local zombiesFolder = Workspace:FindFirstChild("Zombies")
 
+            -- 5.1 ตรวจสอบหน้า Lobby หลัก -> สร้างห้องดันเจี้ยนใหม่
             if zones and zones:FindFirstChild("RaidShop") then
                 pcall(function()
                     local platform = Workspace:WaitForChild("Platforms", 2):WaitForChild("Platform", 2)
@@ -78,18 +112,25 @@ task.spawn(function()
                 task.wait(5)
                 continue
             
+            -- 5.2 ตรวจสอบสถานะจบดันเจี้ยน -> ต้องผ่านการเช็ค UI บนหน้าจอจริงเท่านั้นถึงจะกดเริ่มใหม่
             elseif not zombiesFolder or #zombiesFolder:GetChildren() == 0 then
-                task.wait(2)
-                if _G_Farming and (not Workspace:FindFirstChild("Zombies") or #Workspace.Zombies:GetChildren() == 0) and not (Workspace:FindFirstChild("Zones") and Workspace.Zones:FindFirstChild("RaidShop")) then
-                    pcall(function()
-                        local interactRemote = ReplicatedStorage:WaitForChild("Assets", 2):WaitForChild("Remotes", 2):WaitForChild("Interact", 2)
-                        if interactRemote then
-                            interactRemote:FireServer("PlayAgain")
+                task.wait(1)
+                if _G_Farming and (not Workspace:FindFirstChild("Zombies") or #Workspace.Zombies:GetChildren() == 0) then
+                    -- เพิ่มเงื่อนไขเด็ดขาด: ต้องไม่ใช่หน้าล็อบบี้หลัก และ ต้องเจอ UI จบเกมจริงๆ เท่านั้น
+                    if not (Workspace:FindFirstChild("Zones") and Workspace.Zones:FindFirstChild("RaidShop")) then
+                        if IsMatchReallyOver() then
+                            pcall(function()
+                                local interactRemote = ReplicatedStorage:WaitForChild("Assets", 2):WaitForChild("Remotes", 2):WaitForChild("Interact", 2)
+                                if interactRemote then
+                                    interactRemote:FireServer("PlayAgain")
+                                end
+                            end)
+                            task.wait(5) -- ล็อกเวลาคูลดาวน์รีโมท
                         end
-                    end)
-                    task.wait(5)
+                    end
                 end
 
+            -- 5.3 สถานะต่อสู้ -> วาร์ปเกาะหลังมอนสเตอร์ปกติ
             elseif zombiesFolder and myRoot then
                 for _, mob in pairs(zombiesFolder:GetChildren()) do
                     if not _G_Farming then break end
@@ -113,7 +154,7 @@ task.spawn(function()
     end
 end)
 
--- [[ 5. ลูปที่ 2: ระบบ Auto Skill ]]
+-- [[ 6. ลูปที่ 2: ระบบ Auto Skill ]]
 task.spawn(function()
     while true do
         task.wait()
@@ -130,7 +171,7 @@ task.spawn(function()
     end
 end)
 
--- [[ 6. ลูปที่ 3: Smart Magnet ดูดของ ]]
+-- [[ 7. ลูปที่ 3: Smart Magnet ดูดของดรอปฟิสิกส์ ]]
 task.spawn(function()
     while true do
         task.wait(0.2)
@@ -153,12 +194,12 @@ task.spawn(function()
     end
 end)
 
--- [[ 7. GUI ]]
+-- [[ 8. การสร้าง GUI V14 ]]
 local UI_Parent = (pcall(function() return game:GetService("CoreGui").Name end) and game:GetService("CoreGui")) or LocalPlayer:WaitForChild("PlayerGui")
-if UI_Parent:FindFirstChild("LunaHubV13") then UI_Parent.LunaHubV13:Destroy() end
+if UI_Parent:FindFirstChild("LunaHubV14") then UI_Parent.LunaHubV14:Destroy() end
 
 local ScreenGui = Instance.new("ScreenGui")
-ScreenGui.Name = "LunaHubV13"
+ScreenGui.Name = "LunaHubV14"
 ScreenGui.Parent = UI_Parent
 
 local MainFrame = Instance.new("Frame")
@@ -175,7 +216,7 @@ local Title = Instance.new("TextLabel")
 Title.Size = UDim2.new(1, 0, 0, 35)
 Title.BackgroundColor3 = Color3.fromRGB(35, 35, 45)
 Title.TextColor3 = Color3.fromRGB(255, 255, 255)
-Title.Text = "🌙 LUNA HUB V13.1 | HOTFIX"
+Title.Text = "🌙 LUNA HUB V14 | ANTI-LOOP"
 Title.Font = Enum.Font.GothamBold
 Title.TextSize = 13
 Title.Parent = MainFrame
@@ -184,9 +225,9 @@ Instance.new("UICorner", Title).CornerRadius = UDim.new(0, 10)
 local FarmBtn = Instance.new("TextButton")
 FarmBtn.Size = UDim2.new(0.9, 0, 0, 30)
 FarmBtn.Position = UDim2.new(0.05, 0, 0, 45)
-FarmBtn.BackgroundColor3 = _G_Farming and Color3.fromRGB(40, 180, 40) or Color3.fromRGB(180, 40, 40)
+FarmBtn.BackgroundColor3 = Color3.fromRGB(40, 180, 40)
 FarmBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
-FarmBtn.Text = "1. MAIN FARM & REPLAY: " .. (_G_Farming and "ON" or "OFF")
+FarmBtn.Text = "1. MAIN FARM & REPLAY: ON"
 FarmBtn.Font = Enum.Font.GothamBold
 FarmBtn.TextSize = 11
 FarmBtn.Parent = MainFrame
@@ -195,9 +236,9 @@ Instance.new("UICorner", FarmBtn).CornerRadius = UDim.new(0, 6)
 local SkillBtn = Instance.new("TextButton")
 SkillBtn.Size = UDim2.new(0.9, 0, 0, 30)
 SkillBtn.Position = UDim2.new(0.05, 0, 0, 80)
-SkillBtn.BackgroundColor3 = _G_AutoSkill and Color3.fromRGB(40, 180, 40) or Color3.fromRGB(180, 40, 40)
+SkillBtn.BackgroundColor3 = Color3.fromRGB(40, 180, 40)
 SkillBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
-SkillBtn.Text = "2. AUTO SKILL (E,Z,X,C): " .. (_G_AutoSkill and "ON" or "OFF")
+SkillBtn.Text = "2. AUTO SKILL (E,Z,X,C): ON"
 SkillBtn.Font = Enum.Font.GothamBold
 SkillBtn.TextSize = 11
 SkillBtn.Parent = MainFrame
@@ -206,9 +247,9 @@ Instance.new("UICorner", SkillBtn).CornerRadius = UDim.new(0, 6)
 local MagnetBtn = Instance.new("TextButton")
 MagnetBtn.Size = UDim2.new(0.9, 0, 0, 30)
 MagnetBtn.Position = UDim2.new(0.05, 0, 0, 115)
-MagnetBtn.BackgroundColor3 = _G_MagnetItems and Color3.fromRGB(0, 130, 200) or Color3.fromRGB(180, 40, 40)
+MagnetBtn.BackgroundColor3 = Color3.fromRGB(0, 130, 200)
 MagnetBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
-MagnetBtn.Text = "3. SMART MAGNET (ดูดของ): " .. (_G_MagnetItems and "ON" or "OFF")
+MagnetBtn.Text = "3. SMART MAGNET (ดูดของ): ON"
 MagnetBtn.Font = Enum.Font.GothamBold
 MagnetBtn.TextSize = 11
 MagnetBtn.Parent = MainFrame
@@ -266,6 +307,7 @@ DelayFill.BorderSizePixel = 0
 DelayFill.Parent = DelayBG
 Instance.new("UICorner", DelayFill).CornerRadius = UDim.new(0, 4)
 
+-- ระบบผูกปุ่ม
 FarmBtn.MouseButton1Click:Connect(function()
     _G_Farming = not _G_Farming
     FarmBtn.BackgroundColor3 = _G_Farming and Color3.fromRGB(40, 180, 40) or Color3.fromRGB(180, 40, 40)
