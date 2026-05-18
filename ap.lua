@@ -8,16 +8,15 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local LocalPlayer = Players.LocalPlayer
 _G_Farming = true
 _G_Magnet = true 
+_G_IsCollecting = false -- ตัวแปรระบบกันลูปพิกัดตีกันเอง
 _G_Distance = 7
 _G_SkillDelay = 0.5 
 
--- [[ 2. ระบบทำลายอนิเมชั่นสกิล (Fast Attack) ]]
+-- [[ 2. ระบบทำลายอนิเมชั่นสกิล (Fast Attack / No Cast Time) ]]
 task.spawn(function()
     pcall(function()
         local animsFolder = ReplicatedStorage:WaitForChild("Assets", 5)
-        if animsFolder then
-            animsFolder = animsFolder:WaitForChild("Anims", 5)
-        end
+        if animsFolder then animsFolder = animsFolder:WaitForChild("Anims", 5) end
         
         if animsFolder then
             for _, anim in pairs(animsFolder:GetDescendants()) do
@@ -40,19 +39,15 @@ local function GetCurrentObjectiveName()
     return ""
 end
 
--- [[ 4. ระบบค้นหาเป้าหมาย (หา RootPart โดยตรง ไม่สน Model หรือ Humanoid) ]]
+-- [[ 4. ระบบค้นหาเป้าหมาย (มุดทะลวงหา RootPart ในโฟลเดอร์ Zombies) ]]
 local function GetCurrentZombie()
     local folder = Workspace:FindFirstChild("Zombies")
     if not folder then return nil, nil end
     
-    -- มุดทะลวงหาชิ้นส่วนเป้าหมายโดยตรง (ทะลุ Folder และ Model 100%)
     for _, part in pairs(folder:GetDescendants()) do
         if (part.Name == "HumanoidRootPart" or part.Name == "Torso") and part:IsA("BasePart") then
             local mob = part.Parent
             local hum = mob:FindFirstChildOfClass("Humanoid")
-            
-            -- ถ้าเกมนี้ยังใช้ Humanoid อยู่ ให้เช็คว่าเลือด > 0
-            -- แต่ถ้าเกมนี้ไม่มี Humanoid แล้ว ให้ถือว่ามันยังมีชีวิตอยู่และลุยได้เลย
             if not hum or hum.Health > 0 then
                 return part, hum
             end
@@ -61,7 +56,7 @@ local function GetCurrentZombie()
     return nil, nil
 end
 
--- [[ 5. ฟังก์ชันออโต้สกิล (Z, X, C, V, E, G) ]]
+-- [[ 5. ฟังก์ชันออโต้สกิลชุดเต็มตามขอ (Z, X, C, V, E, G) ]]
 local skills = {"Z", "X", "C", "V", "E", "G"}
 local function CastAllSkills()
     for _, key in pairs(skills) do
@@ -75,7 +70,7 @@ local function CastAllSkills()
     end
 end
 
--- [[ 6. ลูปอิสระที่ 1: ระบบวาปฟาร์มเจาะลึก ]]
+-- [[ 6. ลูปอิสระที่ 1: ระบบวาปฟาร์มมอนสเตอร์ ]]
 task.spawn(function()
     while true do
         task.wait()
@@ -86,21 +81,18 @@ task.spawn(function()
             if myRoot then
                 local targetPart, targetHum = GetCurrentZombie()
                 if targetPart and targetPart.Parent then
-                    
                     local startObjective = GetCurrentObjectiveName()
                     
-                    -- ล็อกเป้าจนกว่า RootPart จะพัง/หายไป หรือถ้ามี Humanoid ก็จนกว่าเลือดจะหมด
                     while _G_Farming and targetPart and targetPart.Parent do
                         task.wait()
                         if not LocalPlayer.Character or not LocalPlayer.Character:FindFirstChild("HumanoidRootPart") then break end
-                        
-                        -- ถ้ามีระบบ Humanoid และเลือดเหลือ 0 ให้เบรกลูปหาเป้าหมายใหม่
                         if targetHum and targetHum.Health <= 0 then break end
-                        
-                        -- รีเซ็ตล็อคเป้าทันทีที่ Section เควสเปลี่ยน
                         if GetCurrentObjectiveName() ~= startObjective then break end
                         
-                        myRoot.CFrame = targetPart.CFrame * CFrame.new(0, 0, _G_Distance)
+                        -- 🚨 ลอจิกสำคัญ: ถ้ากำลังวาร์ปไปเก็บของดรอปพื้น ให้หยุดล็อกพิกัดมอนสเตอร์ชั่วคราว
+                        if not _G_IsCollecting then
+                            myRoot.CFrame = targetPart.CFrame * CFrame.new(0, 0, _G_Distance)
+                        end
                     end
                 end
             end
@@ -122,37 +114,57 @@ task.spawn(function()
     end
 end)
 
--- [[ 8. ลูปอิสระที่ 3: ระบบแม่เหล็ก TouchInterest ]]
+-- [[ 8. ลูปอิสระที่ 3: ระบบ Flash TP Magnet (วาร์ปตัวเราไปเหยียบเก็บของ) ]]
 task.spawn(function()
     while true do
-        task.wait(0.15)
+        task.wait(0.1) -- สแกนหาของตกพื้นแบบเรียลไทม์
         if _G_Magnet then
             local thrownFolder = Workspace:FindFirstChild("Thrown")
             local char = LocalPlayer.Character
             local myRoot = char and char:FindFirstChild("HumanoidRootPart")
             
             if thrownFolder and myRoot then
+                local foundItems = false
+                
                 for _, obj in pairs(thrownFolder:GetDescendants()) do
+                    if not _G_Magnet then break end
+                    
+                    -- ค้นหาเฉพาะวัตถุที่มีสิทธิ์สัมผัสเพื่อเก็บไอเทมได้จริง (TouchInterest)
                     if obj.Name == "TouchInterest" or obj:IsA("TouchTransmitter") then
                         local itemHitbox = obj.Parent
                         if itemHitbox and itemHitbox:IsA("BasePart") then
+                            foundItems = true
                             pcall(function()
-                                itemHitbox.CFrame = myRoot.CFrame
+                                _G_IsCollecting = true -- สั่งเปิดโหมดเก็บของเพื่อหยุดลูปฟาร์มชั่วคราว
+                                
+                                -- วาร์ปตัวเราไปพิกัดของกล่องไอเทมชิ้นนั้นทันที
+                                myRoot.CFrame = itemHitbox.CFrame
+                                task.wait(0.06) -- เปิดจังหวะหน่วงเวลา 0.06 วินาทีให้เซิร์ฟเวอร์รับรู้การแตะวัตถุ
                             end)
                         end
                     end
                 end
+                
+                -- เมื่อเคลียร์ของตกพื้นรอบตัวหมดแล้ว ปิดโหมดเก็บของเพื่อกลับไปฟาร์มมอนสเตอร์ต่อ
+                if not foundItems or not _G_Magnet then
+                    _G_IsCollecting = false
+                end
+            else
+                _G_IsCollecting = false
             end
+        else
+            _G_IsCollecting = false
+            task.wait(0.5)
         end
     end
 end)
 
--- [[ 9. การสร้าง GUI V4.5 ]]
+-- [[ 9. การสร้าง GUI V4.6 ]]
 local UI_Parent = (pcall(function() return game:GetService("CoreGui").Name end) and game:GetService("CoreGui")) or LocalPlayer:WaitForChild("PlayerGui")
-if UI_Parent:FindFirstChild("LunaHubV4_5") then UI_Parent.LunaHubV4_5:Destroy() end
+if UI_Parent:FindFirstChild("LunaHubV4_6") then UI_Parent.LunaHubV4_6:Destroy() end
 
 local ScreenGui = Instance.new("ScreenGui")
-ScreenGui.Name = "LunaHubV4_5"
+ScreenGui.Name = "LunaHubV4_6"
 ScreenGui.Parent = UI_Parent
 
 local MainFrame = Instance.new("Frame")
@@ -168,7 +180,7 @@ local Title = Instance.new("TextLabel")
 Title.Size = UDim2.new(1, 0, 0, 30)
 Title.BackgroundColor3 = Color3.fromRGB(40, 40, 45)
 Title.TextColor3 = Color3.fromRGB(255, 255, 255)
-Title.Text = "Luna Hub | V4.5 Root Tracker"
+Title.Text = "Luna Hub | V4.6 Player Magnet"
 Title.Font = Enum.Font.GothamBold
 Title.TextSize = 12
 Title.Parent = MainFrame
@@ -189,7 +201,7 @@ MagnetBtn.Size = UDim2.new(0.42, 0, 0, 30)
 MagnetBtn.Position = UDim2.new(0.53, 0, 0, 40)
 MagnetBtn.BackgroundColor3 = Color3.fromRGB(50, 200, 50)
 MagnetBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
-MagnetBtn.Text = "MAGNET: ON"
+MagnetBtn.Text = "TP GMAG: ON"
 MagnetBtn.Font = Enum.Font.GothamBold
 MagnetBtn.TextSize = 11
 MagnetBtn.Parent = MainFrame
@@ -227,7 +239,7 @@ end)
 MagnetBtn.MouseButton1Click:Connect(function()
     _G_Magnet = not _G_Magnet
     MagnetBtn.BackgroundColor3 = _G_Magnet and Color3.fromRGB(50, 200, 50) or Color3.fromRGB(200, 50, 50)
-    MagnetBtn.Text = "MAGNET: " .. (_G_Magnet and "ON" or "OFF")
+    MagnetBtn.Text = "TP GMAG: " .. (_G_Magnet and "ON" or "OFF")
 end)
 
 local dragging = false
