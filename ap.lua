@@ -3,22 +3,59 @@ local Players = game:GetService("Players")
 local Workspace = game:GetService("Workspace")
 local VIM = game:GetService("VirtualInputManager")
 local UserInputService = game:GetService("UserInputService")
-local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local HttpService = game:GetService("HttpService")
 
 local LocalPlayer = Players.LocalPlayer
+local configFileName = "LunaHub_V4_9_Save.json"
+
+-- ค่าเริ่มต้นระบบ
 _G_Farming = true
 _G_Magnet = true 
 _G_IsCollecting = false 
 _G_Distance = 7
 _G_SkillDelay = 0.5 
 
--- ระบบจดจำสถานะการเปิด/ปิดสกิลแต่ละปุ่ม (ค่าเริ่มต้นเปิดหมด)
-_G_SkillStates = _G_SkillStates or {
+-- ค่าเริ่มต้นของสวิตช์สกิล (เปิดหมดในรอบแรก)
+_G_SkillStates = {
     Z = true, X = true, C = true, 
     V = true, E = true, G = true
 }
 
--- [[ 2. ฟังก์ชันดึงชื่อเควสปัจจุบัน ]]
+-- [[ 2. ระบบ Save / Load จดจำข้ามมิติข้ามด่าน (จำทั้ง Slider และสถานะปุ่มสกิล) ]]
+local function SaveSettings()
+    if type(writefile) == "function" then
+        pcall(function()
+            local data = {
+                Distance = _G_Distance,
+                SkillDelay = _G_SkillDelay,
+                SkillStates = _G_SkillStates
+            }
+            writefile(configFileName, HttpService:JSONEncode(data))
+        end)
+    end
+end
+
+local function LoadSettings()
+    if type(isfile) == "function" and type(readfile) == "function" then
+        pcall(function()
+            if isfile(configFileName) then
+                local result = HttpService:JSONDecode(readfile(configFileName))
+                if result then
+                    _G_Distance = result.Distance or 7
+                    _G_SkillDelay = result.SkillDelay or 0.5
+                    if result.SkillStates then
+                        _G_SkillStates = result.SkillStates
+                    end
+                end
+            end
+        end)
+    end
+end
+
+-- โหลดค่าเดิมทันทีก่อนสร้าง GUI และเริ่มลูป
+LoadSettings()
+
+-- [[ 3. ฟังก์ชันดึงชื่อเควสปัจจุบัน ]]
 local function GetCurrentObjectiveName()
     local objectives = Workspace:FindFirstChild("Objectives")
     if objectives then
@@ -28,11 +65,12 @@ local function GetCurrentObjectiveName()
     return ""
 end
 
--- [[ 3. ระบบค้นหาเป้าหมาย (มุดทะลวงหา RootPart) ]]
+-- [[ 4. ระบบ Global Scanner: สแกนหาเป้าหมายทั่วทุกพิกัดแมพกว้าง ไร้ข้อจำกัดเรื่องระยะ ]]
 local function GetCurrentZombie()
     local folder = Workspace:FindFirstChild("Zombies")
     if not folder then return nil, nil end
     
+    -- กวาดพิกัดทะลวงลึกหาชิ้นส่วนร่างกายโดยตรง ไม่จำกัดระยะทางกายภาพ
     for _, part in pairs(folder:GetDescendants()) do
         if (part.Name == "HumanoidRootPart" or part.Name == "Torso") and part:IsA("BasePart") then
             local mob = part.Parent
@@ -45,7 +83,7 @@ local function GetCurrentZombie()
     return nil, nil
 end
 
--- [[ 4. ฟังก์ชันออโต้สกิลแบบเลือกได้ (ดึงค่าจาก _G_SkillStates) ]]
+-- [[ 5. ฟังก์ชันออโต้สกิลดึงค่าสดจากไฟล์เซฟ ]]
 local function CastAllSkills()
     for key, isEnabled in pairs(_G_SkillStates) do
         if isEnabled then
@@ -60,7 +98,7 @@ local function CastAllSkills()
     end
 end
 
--- [[ 5. ลูปอิสระที่ 1: ระบบวาปฟาร์มมอนสเตอร์ (ล็อก V4.7) ]]
+-- [[ 6. ลูปอิสระที่ 1: ระบบวาปฟาร์มมอนสเตอร์ดุดันตามสูตรเสถียร V4.7 ]]
 task.spawn(function()
     while true do
         task.wait()
@@ -79,7 +117,6 @@ task.spawn(function()
                         if targetHum and targetHum.Health <= 0 then break end
                         if GetCurrentObjectiveName() ~= startObjective then break end
                         
-                        -- หยุดพุ่งใส่มอนสเตอร์ชั่วคราว ถ้าระบบกำลังวาร์ปไปเก็บของ
                         if not _G_IsCollecting then
                             myRoot.CFrame = targetPart.CFrame * CFrame.new(0, 0, _G_Distance)
                         end
@@ -90,7 +127,7 @@ task.spawn(function()
     end
 end)
 
--- [[ 6. ลูปอิสระที่ 2: ระบบ Auto Skill ]]
+-- [[ 7. ลูปอิสระที่ 2: ระบบ Auto Skill ]]
 task.spawn(function()
     while true do
         task.wait(0.1)
@@ -104,7 +141,7 @@ task.spawn(function()
     end
 end)
 
--- [[ 7. ลูปอิสระที่ 3: ระบบ Flash TP Magnet (วาร์ปตัวเราไปเหยียบเก็บของ) ]]
+-- [[ 8. ลูปอิสระที่ 3: ระบบ Flash TP Magnet วาร์ปเก็บของ ]]
 task.spawn(function()
     while true do
         task.wait(0.1) 
@@ -115,10 +152,8 @@ task.spawn(function()
             
             if thrownFolder and myRoot then
                 local foundItems = false
-                
                 for _, obj in pairs(thrownFolder:GetDescendants()) do
                     if not _G_Magnet then break end
-                    
                     if obj.Name == "TouchInterest" or obj:IsA("TouchTransmitter") then
                         local itemHitbox = obj.Parent
                         if itemHitbox and itemHitbox:IsA("BasePart") then
@@ -131,10 +166,7 @@ task.spawn(function()
                         end
                     end
                 end
-                
-                if not foundItems or not _G_Magnet then
-                    _G_IsCollecting = false
-                end
+                if not foundItems or not _G_Magnet then _G_IsCollecting = false end
             else
                 _G_IsCollecting = false
             end
@@ -145,16 +177,16 @@ task.spawn(function()
     end
 end)
 
--- [[ 8. การสร้าง GUI V4.8 ]]
+-- [[ 9. การสร้าง GUI V4.9 ]]
 local UI_Parent = (pcall(function() return game:GetService("CoreGui").Name end) and game:GetService("CoreGui")) or LocalPlayer:WaitForChild("PlayerGui")
-if UI_Parent:FindFirstChild("LunaHubV4_8") then UI_Parent.LunaHubV4_8:Destroy() end
+if UI_Parent:FindFirstChild("LunaHubV4_9") then UI_Parent.LunaHubV4_9:Destroy() end
 
 local ScreenGui = Instance.new("ScreenGui")
-ScreenGui.Name = "LunaHubV4_8"
+ScreenGui.Name = "LunaHubV4_9"
 ScreenGui.Parent = UI_Parent
 
 local MainFrame = Instance.new("Frame")
-MainFrame.Size = UDim2.new(0, 260, 0, 195) -- ขยายความสูงเพื่อใส่ปุ่มสกิล
+MainFrame.Size = UDim2.new(0, 260, 0, 195)
 MainFrame.Position = UDim2.new(0.5, -125, 0.5, -97)
 MainFrame.BackgroundColor3 = Color3.fromRGB(25, 25, 30)
 MainFrame.BorderSizePixel = 0
@@ -166,12 +198,11 @@ local Title = Instance.new("TextLabel")
 Title.Size = UDim2.new(1, 0, 0, 30)
 Title.BackgroundColor3 = Color3.fromRGB(40, 40, 45)
 Title.TextColor3 = Color3.fromRGB(255, 255, 255)
-Title.Text = "Luna Hub | V4.8 Custom Skills"
+Title.Text = "Luna Hub | V4.9 Ultimate Master"
 Title.Font = Enum.Font.GothamBold
 Title.TextSize = 12
 Title.Parent = MainFrame
 
--- ปุ่มหลัก
 local ToggleBtn = Instance.new("TextButton")
 ToggleBtn.Size = UDim2.new(0.42, 0, 0, 30)
 ToggleBtn.Position = UDim2.new(0.05, 0, 0, 40)
@@ -194,11 +225,10 @@ MagnetBtn.TextSize = 11
 MagnetBtn.Parent = MainFrame
 Instance.new("UICorner", MagnetBtn).CornerRadius = UDim.new(0, 5)
 
--- กลุ่มปุ่มเปิด/ปิดสกิลแยกอิสระ (Z, X, C, V, E, G)
+-- ปุ่มสกิลดึงสถานะจากตัวแปรเซฟมาสร้างความสว่างปุ่ม (เขียว/แดง)
 local skillKeys = {"Z", "X", "C", "V", "E", "G"}
 for i, key in ipairs(skillKeys) do
     local sBtn = Instance.new("TextButton")
-    -- คำนวณให้ปุ่ม 6 ปุ่มเรียงแถวหน้ากระดานแบบสวยงาม
     sBtn.Size = UDim2.new(0.13, 0, 0, 25)
     sBtn.Position = UDim2.new(0.05 + ((i - 1) * 0.15), 0, 0, 80)
     sBtn.BackgroundColor3 = _G_SkillStates[key] and Color3.fromRGB(50, 200, 50) or Color3.fromRGB(200, 50, 50)
@@ -212,10 +242,10 @@ for i, key in ipairs(skillKeys) do
     sBtn.MouseButton1Click:Connect(function()
         _G_SkillStates[key] = not _G_SkillStates[key]
         sBtn.BackgroundColor3 = _G_SkillStates[key] and Color3.fromRGB(50, 200, 50) or Color3.fromRGB(200, 50, 50)
+        SaveSettings() -- เซฟลงเครื่องทันทีที่เปลี่ยนการตั้งค่าสกิล
     end)
 end
 
--- สไลเดอร์
 local SliderTitle = Instance.new("TextLabel")
 SliderTitle.Size = UDim2.new(1, 0, 0, 20)
 SliderTitle.Position = UDim2.new(0, 0, 0, 115)
@@ -238,7 +268,6 @@ SliderFill.Size = UDim2.new(_G_Distance / 20, 0, 1, 0)
 SliderFill.BackgroundColor3 = Color3.fromRGB(80, 150, 255)
 SliderFill.Parent = SliderBG
 
--- ผูกปุ่มหลัก
 ToggleBtn.MouseButton1Click:Connect(function()
     _G_Farming = not _G_Farming
     ToggleBtn.BackgroundColor3 = _G_Farming and Color3.fromRGB(50, 200, 50) or Color3.fromRGB(200, 50, 50)
@@ -254,7 +283,10 @@ end)
 local dragging = false
 SliderBG.MouseButton1Down:Connect(function() dragging = true end)
 UserInputService.InputEnded:Connect(function(input)
-    if input.UserInputType == Enum.UserInputType.MouseButton1 then dragging = false end
+    if input.UserInputType == Enum.UserInputType.MouseButton1 then 
+        if dragging then SaveSettings() end
+        dragging = false 
+    end
 end)
 
 UserInputService.InputChanged:Connect(function(input)
