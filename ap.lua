@@ -12,6 +12,12 @@ _G_IsCollecting = false
 _G_Distance = 7
 _G_SkillDelay = 0.5 
 
+-- ระบบจดจำสถานะการเปิด/ปิดสกิลแต่ละปุ่ม (ค่าเริ่มต้นเปิดหมด)
+_G_SkillStates = _G_SkillStates or {
+    Z = true, X = true, C = true, 
+    V = true, E = true, G = true
+}
+
 -- [[ 2. ฟังก์ชันดึงชื่อเควสปัจจุบัน ]]
 local function GetCurrentObjectiveName()
     local objectives = Workspace:FindFirstChild("Objectives")
@@ -39,21 +45,22 @@ local function GetCurrentZombie()
     return nil, nil
 end
 
--- [[ 4. ฟังก์ชันออโต้สกิล (Z, X, C, V, E, G) ]]
-local skills = {"Z", "X", "C", "V", "E", "G"}
+-- [[ 4. ฟังก์ชันออโต้สกิลแบบเลือกได้ (ดึงค่าจาก _G_SkillStates) ]]
 local function CastAllSkills()
-    for _, key in pairs(skills) do
-        task.spawn(function()
-            pcall(function()
-                VIM:SendKeyEvent(true, Enum.KeyCode[key], false, game)
-                task.wait(0.02)
-                VIM:SendKeyEvent(false, Enum.KeyCode[key], false, game)
+    for key, isEnabled in pairs(_G_SkillStates) do
+        if isEnabled then
+            task.spawn(function()
+                pcall(function()
+                    VIM:SendKeyEvent(true, Enum.KeyCode[key], false, game)
+                    task.wait(0.02)
+                    VIM:SendKeyEvent(false, Enum.KeyCode[key], false, game)
+                end)
             end)
-        end)
+        end
     end
 end
 
--- [[ 5. ลูปอิสระที่ 1: ระบบวาปฟาร์มมอนสเตอร์ ]]
+-- [[ 5. ลูปอิสระที่ 1: ระบบวาปฟาร์มมอนสเตอร์ (ล็อก V4.7) ]]
 task.spawn(function()
     while true do
         task.wait()
@@ -138,17 +145,17 @@ task.spawn(function()
     end
 end)
 
--- [[ 8. การสร้าง GUI ]]
+-- [[ 8. การสร้าง GUI V4.8 ]]
 local UI_Parent = (pcall(function() return game:GetService("CoreGui").Name end) and game:GetService("CoreGui")) or LocalPlayer:WaitForChild("PlayerGui")
-if UI_Parent:FindFirstChild("LunaHubV4_7") then UI_Parent.LunaHubV4_7:Destroy() end
+if UI_Parent:FindFirstChild("LunaHubV4_8") then UI_Parent.LunaHubV4_8:Destroy() end
 
 local ScreenGui = Instance.new("ScreenGui")
-ScreenGui.Name = "LunaHubV4_7"
+ScreenGui.Name = "LunaHubV4_8"
 ScreenGui.Parent = UI_Parent
 
 local MainFrame = Instance.new("Frame")
-MainFrame.Size = UDim2.new(0, 260, 0, 165)
-MainFrame.Position = UDim2.new(0.5, -125, 0.5, -82)
+MainFrame.Size = UDim2.new(0, 260, 0, 195) -- ขยายความสูงเพื่อใส่ปุ่มสกิล
+MainFrame.Position = UDim2.new(0.5, -125, 0.5, -97)
 MainFrame.BackgroundColor3 = Color3.fromRGB(25, 25, 30)
 MainFrame.BorderSizePixel = 0
 MainFrame.Active = true
@@ -159,11 +166,12 @@ local Title = Instance.new("TextLabel")
 Title.Size = UDim2.new(1, 0, 0, 30)
 Title.BackgroundColor3 = Color3.fromRGB(40, 40, 45)
 Title.TextColor3 = Color3.fromRGB(255, 255, 255)
-Title.Text = "Luna Hub | V4.7 Final Clean"
+Title.Text = "Luna Hub | V4.8 Custom Skills"
 Title.Font = Enum.Font.GothamBold
 Title.TextSize = 12
 Title.Parent = MainFrame
 
+-- ปุ่มหลัก
 local ToggleBtn = Instance.new("TextButton")
 ToggleBtn.Size = UDim2.new(0.42, 0, 0, 30)
 ToggleBtn.Position = UDim2.new(0.05, 0, 0, 40)
@@ -186,9 +194,31 @@ MagnetBtn.TextSize = 11
 MagnetBtn.Parent = MainFrame
 Instance.new("UICorner", MagnetBtn).CornerRadius = UDim.new(0, 5)
 
+-- กลุ่มปุ่มเปิด/ปิดสกิลแยกอิสระ (Z, X, C, V, E, G)
+local skillKeys = {"Z", "X", "C", "V", "E", "G"}
+for i, key in ipairs(skillKeys) do
+    local sBtn = Instance.new("TextButton")
+    -- คำนวณให้ปุ่ม 6 ปุ่มเรียงแถวหน้ากระดานแบบสวยงาม
+    sBtn.Size = UDim2.new(0.13, 0, 0, 25)
+    sBtn.Position = UDim2.new(0.05 + ((i - 1) * 0.15), 0, 0, 80)
+    sBtn.BackgroundColor3 = _G_SkillStates[key] and Color3.fromRGB(50, 200, 50) or Color3.fromRGB(200, 50, 50)
+    sBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+    sBtn.Text = key
+    sBtn.Font = Enum.Font.GothamBold
+    sBtn.TextSize = 11
+    sBtn.Parent = MainFrame
+    Instance.new("UICorner", sBtn).CornerRadius = UDim.new(0, 4)
+    
+    sBtn.MouseButton1Click:Connect(function()
+        _G_SkillStates[key] = not _G_SkillStates[key]
+        sBtn.BackgroundColor3 = _G_SkillStates[key] and Color3.fromRGB(50, 200, 50) or Color3.fromRGB(200, 50, 50)
+    end)
+end
+
+-- สไลเดอร์
 local SliderTitle = Instance.new("TextLabel")
 SliderTitle.Size = UDim2.new(1, 0, 0, 20)
-SliderTitle.Position = UDim2.new(0, 0, 0, 85)
+SliderTitle.Position = UDim2.new(0, 0, 0, 115)
 SliderTitle.BackgroundTransparency = 1
 SliderTitle.TextColor3 = Color3.fromRGB(200, 200, 200)
 SliderTitle.Text = "Distance: " .. _G_Distance
@@ -198,7 +228,7 @@ SliderTitle.Parent = MainFrame
 
 local SliderBG = Instance.new("TextButton")
 SliderBG.Size = UDim2.new(0.8, 0, 0, 10)
-SliderBG.Position = UDim2.new(0.1, 0, 0, 110)
+SliderBG.Position = UDim2.new(0.1, 0, 0, 140)
 SliderBG.BackgroundColor3 = Color3.fromRGB(50, 50, 55)
 SliderBG.Text = ""
 SliderBG.Parent = MainFrame
@@ -208,7 +238,7 @@ SliderFill.Size = UDim2.new(_G_Distance / 20, 0, 1, 0)
 SliderFill.BackgroundColor3 = Color3.fromRGB(80, 150, 255)
 SliderFill.Parent = SliderBG
 
--- ผูกปุ่ม
+-- ผูกปุ่มหลัก
 ToggleBtn.MouseButton1Click:Connect(function()
     _G_Farming = not _G_Farming
     ToggleBtn.BackgroundColor3 = _G_Farming and Color3.fromRGB(50, 200, 50) or Color3.fromRGB(200, 50, 50)
