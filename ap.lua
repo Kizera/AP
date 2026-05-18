@@ -7,7 +7,7 @@ local HttpService = game:GetService("HttpService")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 local LocalPlayer = Players.LocalPlayer
-local configFileName = "LunaHub_V5_3_Save.json" -- ใช้ไฟล์เซฟเดิมต่อเนื่องได้เลย
+local configFileName = "LunaHub_V5_5_Save.json"
 
 -- ค่าเริ่มต้นระบบ
 _G_Farming = true
@@ -137,7 +137,7 @@ task.spawn(function()
     end
 end)
 
--- [[ 8. ลูปอิสระที่ 3: ระบบ Auto Start & Auto Retry ]]
+-- [[ 8. ลูปอิสระที่ 3: ระบบ Auto Start (เหลือเฉพาะเคลียร์ข้ามห้องแรด) ]]
 task.spawn(function()
     while true do
         task.wait(3) 
@@ -146,26 +146,25 @@ task.spawn(function()
                 local interactRemote = ReplicatedStorage:WaitForChild("Assets", 3):WaitForChild("Remotes", 3):WaitForChild("Interact", 3)
                 if interactRemote then
                     interactRemote:FireServer("VoteSkipRaid")
-                    interactRemote:FireServer("PlayAgain")
                 end
             end)
         end
     end
 end)
 
--- [[ 9. การสร้าง GUI V5.4 ]]
+-- [[ 9. การสร้าง GUI V5.5 (ชิดซ้ายจอ) ]]
 local UI_Parent = (pcall(function() return game:GetService("CoreGui").Name end) and game:GetService("CoreGui")) or LocalPlayer:WaitForChild("PlayerGui")
-if UI_Parent:FindFirstChild("LunaHubV5_3") then UI_Parent.LunaHubV5_3:Destroy() end
+if UI_Parent:FindFirstChild("LunaHubV4_9") then UI_Parent.LunaHubV4_9:Destroy() end
 if UI_Parent:FindFirstChild("LunaHubV5_4") then UI_Parent.LunaHubV5_4:Destroy() end
+if UI_Parent:FindFirstChild("LunaHubV5_5") then UI_Parent.LunaHubV5_5:Destroy() end
 
 local ScreenGui = Instance.new("ScreenGui")
-ScreenGui.Name = "LunaHubV5_4"
+ScreenGui.Name = "LunaHubV5_5"
 ScreenGui.Parent = UI_Parent
 
 local MainFrame = Instance.new("Frame")
 MainFrame.Size = UDim2.new(0, 260, 0, 215)
--- 🚨 ปรับพิกัดใหม่ให้ชิดซ้าย (X = 20 พิกเซลจากขอบจอ, Y = กึ่งกลางจอ)
-MainFrame.Position = UDim2.new(0, 20, 0.5, -107)
+MainFrame.Position = UDim2.new(0, 20, 0.5, -107) -- ชิดซ้ายจอ
 MainFrame.BackgroundColor3 = Color3.fromRGB(25, 25, 30)
 MainFrame.BorderSizePixel = 0
 MainFrame.Active = true
@@ -176,7 +175,7 @@ local Title = Instance.new("TextLabel")
 Title.Size = UDim2.new(1, 0, 0, 30)
 Title.BackgroundColor3 = Color3.fromRGB(40, 40, 45)
 Title.TextColor3 = Color3.fromRGB(255, 255, 255)
-Title.Text = "Luna Hub | V5.4 Left Aligned"
+Title.Text = "Luna Hub | V5.5 Pure Auto Start"
 Title.Font = Enum.Font.GothamBold
 Title.TextSize = 12
 Title.Parent = MainFrame
@@ -186,7 +185,7 @@ ToggleBtn.Size = UDim2.new(0.9, 0, 0, 30)
 ToggleBtn.Position = UDim2.new(0.05, 0, 0, 40)
 ToggleBtn.BackgroundColor3 = _G_Farming and Color3.fromRGB(50, 200, 50) or Color3.fromRGB(200, 50, 50)
 ToggleBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
-ToggleBtn.Text = "FARM & AUTO MATCH: " .. (_G_Farming and "ON" or "OFF")
+ToggleBtn.Text = "FARM & AUTO START: " .. (_G_Farming and "ON" or "OFF")
 ToggleBtn.Font = Enum.Font.GothamBold
 ToggleBtn.TextSize = 11
 ToggleBtn.Parent = MainFrame
@@ -231,10 +230,10 @@ DistBG.BackgroundColor3 = Color3.fromRGB(50, 50, 55)
 DistBG.Text = ""
 DistBG.Parent = MainFrame
 
-local DistFill = Instance.new("Frame")
-DistFill.Size = UDim2.new(_G_Distance / 20, 0, 1, 0)
-DistFill.BackgroundColor3 = Color3.fromRGB(80, 150, 255)
-DistFill.Parent = DistBG
+local SliderFill = Instance.new("Frame")
+SliderFill.Size = UDim2.new(_G_Distance / 20, 0, 1, 0)
+SliderFill.BackgroundColor3 = Color3.fromRGB(80, 150, 255)
+SliderFill.Parent = SliderBG
 
 -- สไลเดอร์ 2: เวลาหน่วงสกิล
 local DelayTitle = Instance.new("TextLabel")
@@ -260,11 +259,11 @@ DelayFill.Size = UDim2.new((_G_SkillDelay - minD) / (maxD - minD), 0, 1, 0)
 DelayFill.BackgroundColor3 = Color3.fromRGB(255, 100, 100)
 DelayFill.Parent = DelayBG
 
--- [[ 10. ระบบผูกปุ่มและการลากสไลเดอร์ ]]
+-- [[ 10. ระบบควบคุมและคีย์ลัด P ]]
 ToggleBtn.MouseButton1Click:Connect(function()
     _G_Farming = not _G_Farming
     ToggleBtn.BackgroundColor3 = _G_Farming and Color3.fromRGB(50, 200, 50) or Color3.fromRGB(200, 50, 50)
-    ToggleBtn.Text = "FARM & AUTO MATCH: " .. (_G_Farming and "ON" or "OFF")
+    ToggleBtn.Text = "FARM & AUTO START: " .. (_G_Farming and "ON" or "OFF")
     SaveSettings()
 end)
 
