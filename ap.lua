@@ -11,17 +11,19 @@ local configFileName = "LunaHub_V4_9_Save.json"
 -- ค่าเริ่มต้นระบบ
 _G_Farming = true
 _G_Magnet = true 
+_G_TPGates = false       -- ฟีเจอร์ใหม่: เปิด/ปิด ระบบออโต้วาร์ปสแกนแตะเกท
 _G_IsCollecting = false 
+_G_IsGoingToGate = false -- ระบบล็อกตำแหน่งกันลูปตีกันเองตอนไปแตะเกท
 _G_Distance = 7
 _G_SkillDelay = 0.5 
 
--- ค่าเริ่มต้นของสวิตช์สกิล (เปิดหมดในรอบแรก)
+-- ค่าเริ่มต้นของสวิตช์สกิล
 _G_SkillStates = {
     Z = true, X = true, C = true, 
     V = true, E = true, G = true
 }
 
--- [[ 2. ระบบ Save / Load จดจำข้ามมิติข้ามด่าน (จำทั้ง Slider และสถานะปุ่มสกิล) ]]
+-- [[ 2. ระบบ Save / Load จำค่า Slider และ ปุ่มสกิล ]]
 local function SaveSettings()
     if type(writefile) == "function" then
         pcall(function()
@@ -52,7 +54,6 @@ local function LoadSettings()
     end
 end
 
--- โหลดค่าเดิมทันทีก่อนสร้าง GUI และเริ่มลูป
 LoadSettings()
 
 -- [[ 3. ฟังก์ชันดึงชื่อเควสปัจจุบัน ]]
@@ -65,12 +66,11 @@ local function GetCurrentObjectiveName()
     return ""
 end
 
--- [[ 4. ระบบ Global Scanner: สแกนหาเป้าหมายทั่วทุกพิกัดแมพกว้าง ไร้ข้อจำกัดเรื่องระยะ ]]
+-- [[ 4. ระบบ Global Scanner: สแกนหาเป้าหมายมอนสเตอร์ทั่วพิกัด (สไตล์ V4.7) ]]
 local function GetCurrentZombie()
     local folder = Workspace:FindFirstChild("Zombies")
     if not folder then return nil, nil end
     
-    -- กวาดพิกัดทะลวงลึกหาชิ้นส่วนร่างกายโดยตรง ไม่จำกัดระยะทางกายภาพ
     for _, part in pairs(folder:GetDescendants()) do
         if (part.Name == "HumanoidRootPart" or part.Name == "Torso") and part:IsA("BasePart") then
             local mob = part.Parent
@@ -83,7 +83,7 @@ local function GetCurrentZombie()
     return nil, nil
 end
 
--- [[ 5. ฟังก์ชันออโต้สกิลดึงค่าสดจากไฟล์เซฟ ]]
+-- [[ 5. ฟังก์ชันออโต้สกิล ]]
 local function CastAllSkills()
     for key, isEnabled in pairs(_G_SkillStates) do
         if isEnabled then
@@ -98,7 +98,7 @@ local function CastAllSkills()
     end
 end
 
--- [[ 6. ลูปอิสระที่ 1: ระบบวาปฟาร์มมอนสเตอร์ดุดันตามสูตรเสถียร V4.7 ]]
+-- [[ 6. ลูปอิสระที่ 1: ระบบวาปฟาร์มมอนสเตอร์ (ล็อกโครงสร้างเสถียร V4.7) ]]
 task.spawn(function()
     while true do
         task.wait()
@@ -117,7 +117,8 @@ task.spawn(function()
                         if targetHum and targetHum.Health <= 0 then break end
                         if GetCurrentObjectiveName() ~= startObjective then break end
                         
-                        if not _G_IsCollecting then
+                        -- จะล็อกพิกัดมอนสเตอร์ก็ต่อเมื่อไม่ได้อยู่ในสถานะวาร์ปเก็บของ หรือ วาร์ปไปแตะเกท
+                        if not _G_IsCollecting and not _G_IsGoingToGate then
                             myRoot.CFrame = targetPart.CFrame * CFrame.new(0, 0, _G_Distance)
                         end
                     end
@@ -141,7 +142,7 @@ task.spawn(function()
     end
 end)
 
--- [[ 8. ลูปอิสระที่ 3: ระบบ Flash TP Magnet วาร์ปเก็บของ ]]
+-- [[ 8. ลูปอิสระที่ 3: ระบบ Flash TP Magnet (วาร์ปตัวเราไปเหยียบเก็บของพื้น) ]]
 task.spawn(function()
     while true do
         task.wait(0.1) 
@@ -177,17 +178,55 @@ task.spawn(function()
     end
 end)
 
--- [[ 9. การสร้าง GUI V4.9 ]]
+-- [[ 9. ลูปอิสระที่ 4: ระบบสแกนและวาร์ปแตะ Hitbox ของทุกเกท + รีเช็คต่อเนื่อง ]]
+task.spawn(function()
+    while true do
+        task.wait(0.1)
+        if _G_TPGates then
+            local mapFolder = Workspace:FindFirstChild("Map")
+            local gatesFolder = mapFolder and mapFolder:FindFirstChild("Gates")
+            local char = LocalPlayer.Character
+            local myRoot = char and char:FindFirstChild("HumanoidRootPart")
+
+            if gatesFolder and myRoot then
+                local gates = gatesFolder:GetChildren()
+                if #gates > 0 then
+                    -- วนลูปสแกนแตะ Hitbox ทุกเกทที่มีอยู่ในโฟลเดอร์ตอนนี้
+                    for _, gate in pairs(gates) do
+                        if not _G_TPGates then break end
+                        
+                        local hitbox = gate:FindFirstChild("Hitbox")
+                        if hitbox and hitbox:IsA("BasePart") then
+                            pcall(function()
+                                _G_IsGoingToGate = true -- เปิดระบบล็อกตำแหน่งชั่วคราว
+                                myRoot.CFrame = hitbox.CFrame -- วาร์ปไปแตะพิกัด Hitbox โดยตรง
+                                task.wait(0.15) -- หน่วงเวลา 0.15 วินาทีให้เซิร์ฟเวอร์ประมวลผลว่าแตะเกทแล้ว
+                            end)
+                        end
+                    end
+                else
+                    _G_IsGoingToGate = false
+                end
+            else
+                _G_IsGoingToGate = false
+            end
+        else
+            _G_IsGoingToGate = false
+        end
+    end
+end)
+
+-- [[ 10. การสร้าง GUI V5.1 ]]
 local UI_Parent = (pcall(function() return game:GetService("CoreGui").Name end) and game:GetService("CoreGui")) or LocalPlayer:WaitForChild("PlayerGui")
-if UI_Parent:FindFirstChild("LunaHubV4_9") then UI_Parent.LunaHubV4_9:Destroy() end
+if UI_Parent:FindFirstChild("LunaHubV5_1") then UI_Parent.LunaHubV5_1:Destroy() end
 
 local ScreenGui = Instance.new("ScreenGui")
-ScreenGui.Name = "LunaHubV4_9"
+ScreenGui.Name = "LunaHubV5_1"
 ScreenGui.Parent = UI_Parent
 
 local MainFrame = Instance.new("Frame")
-MainFrame.Size = UDim2.new(0, 260, 0, 195)
-MainFrame.Position = UDim2.new(0.5, -125, 0.5, -97)
+MainFrame.Size = UDim2.new(0, 260, 0, 235)
+MainFrame.Position = UDim2.new(0.5, -125, 0.5, -117)
 MainFrame.BackgroundColor3 = Color3.fromRGB(25, 25, 30)
 MainFrame.BorderSizePixel = 0
 MainFrame.Active = true
@@ -198,7 +237,7 @@ local Title = Instance.new("TextLabel")
 Title.Size = UDim2.new(1, 0, 0, 30)
 Title.BackgroundColor3 = Color3.fromRGB(40, 40, 45)
 Title.TextColor3 = Color3.fromRGB(255, 255, 255)
-Title.Text = "Luna Hub | V4.9 Ultimate Master"
+Title.Text = "Luna Hub | V5.1 Gate Scanner"
 Title.Font = Enum.Font.GothamBold
 Title.TextSize = 12
 Title.Parent = MainFrame
@@ -225,7 +264,6 @@ MagnetBtn.TextSize = 11
 MagnetBtn.Parent = MainFrame
 Instance.new("UICorner", MagnetBtn).CornerRadius = UDim.new(0, 5)
 
--- ปุ่มสกิลดึงสถานะจากตัวแปรเซฟมาสร้างความสว่างปุ่ม (เขียว/แดง)
 local skillKeys = {"Z", "X", "C", "V", "E", "G"}
 for i, key in ipairs(skillKeys) do
     local sBtn = Instance.new("TextButton")
@@ -242,7 +280,7 @@ for i, key in ipairs(skillKeys) do
     sBtn.MouseButton1Click:Connect(function()
         _G_SkillStates[key] = not _G_SkillStates[key]
         sBtn.BackgroundColor3 = _G_SkillStates[key] and Color3.fromRGB(50, 200, 50) or Color3.fromRGB(200, 50, 50)
-        SaveSettings() -- เซฟลงเครื่องทันทีที่เปลี่ยนการตั้งค่าสกิล
+        SaveSettings()
     end)
 end
 
@@ -268,6 +306,19 @@ SliderFill.Size = UDim2.new(_G_Distance / 20, 0, 1, 0)
 SliderFill.BackgroundColor3 = Color3.fromRGB(80, 150, 255)
 SliderFill.Parent = SliderBG
 
+-- ปุ่มระบบสแกนวาร์ปแตะเกทอัตโนมัติ (เปลี่ยนเป็นสวิตช์เปิด/ปิดสำหรับลูปรักษาระดับ)
+local GateBtn = Instance.new("TextButton")
+GateBtn.Size = UDim2.new(0.9, 0, 0, 35)
+GateBtn.Position = UDim2.new(0.05, 0, 0, 170)
+GateBtn.BackgroundColor3 = Color3.fromRGB(200, 150, 50)
+GateBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+GateBtn.Text = "🚀 AUTO TP GATES: OFF"
+GateBtn.Font = Enum.Font.GothamBold
+GateBtn.TextSize = 12
+GateBtn.Parent = MainFrame
+Instance.new("UICorner", GateBtn).CornerRadius = UDim.new(0, 5)
+
+-- ผูกปุ่มหลัก
 ToggleBtn.MouseButton1Click:Connect(function()
     _G_Farming = not _G_Farming
     ToggleBtn.BackgroundColor3 = _G_Farming and Color3.fromRGB(50, 200, 50) or Color3.fromRGB(200, 50, 50)
@@ -278,6 +329,12 @@ MagnetBtn.MouseButton1Click:Connect(function()
     _G_Magnet = not _G_Magnet
     MagnetBtn.BackgroundColor3 = _G_Magnet and Color3.fromRGB(50, 200, 50) or Color3.fromRGB(200, 50, 50)
     MagnetBtn.Text = "TP GMAG: " .. (_G_Magnet and "ON" or "OFF")
+end)
+
+GateBtn.MouseButton1Click:Connect(function()
+    _G_TPGates = not _G_TPGates
+    GateBtn.BackgroundColor3 = _G_TPGates and Color3.fromRGB(50, 200, 50) or Color3.fromRGB(200, 150, 50)
+    GateBtn.Text = "🚀 AUTO TP GATES: " .. (_G_TPGates and "ON" or "OFF")
 end)
 
 local dragging = false
