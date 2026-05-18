@@ -4,14 +4,13 @@ local Workspace = game:GetService("Workspace")
 local VIM = game:GetService("VirtualInputManager")
 local UserInputService = game:GetService("UserInputService")
 local HttpService = game:GetService("HttpService")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 local LocalPlayer = Players.LocalPlayer
-local configFileName = "LunaHub_V5_2_Save.json"
+local configFileName = "LunaHub_V5_3_Save.json" -- ใช้ไฟล์เซฟเดิมต่อเนื่องได้เลย
 
--- ค่าเริ่มต้นระบบ (จะถูกทับถ้ามีไฟล์เซฟ)
+-- ค่าเริ่มต้นระบบ
 _G_Farming = true
-_G_TPGates = false       
-_G_IsGoingToGate = false 
 _G_Distance = 7
 _G_SkillDelay = 0.5 
 
@@ -20,13 +19,12 @@ _G_SkillStates = {
     V = true, E = true, G = true
 }
 
--- [[ 2. ระบบ Save / Load แบบสมบูรณ์ (จดจำทุกการตั้งค่าข้ามเซิร์ฟ) ]]
+-- [[ 2. ระบบ Save / Load ]]
 local function SaveSettings()
     if type(writefile) == "function" then
         pcall(function()
             local data = {
                 Farming = _G_Farming,
-                TPGates = _G_TPGates,
                 Distance = _G_Distance,
                 SkillDelay = _G_SkillDelay,
                 SkillStates = _G_SkillStates
@@ -43,7 +41,6 @@ local function LoadSettings()
                 local result = HttpService:JSONDecode(readfile(configFileName))
                 if result then
                     _G_Farming = result.Farming ~= nil and result.Farming or true
-                    _G_TPGates = result.TPGates ~= nil and result.TPGates or false
                     _G_Distance = result.Distance or 7
                     _G_SkillDelay = result.SkillDelay or 0.5
                     if result.SkillStates then
@@ -57,7 +54,7 @@ end
 
 LoadSettings()
 
--- [[ 3. ฟังก์ชันดึงชื่อเควสปัจจุบัน (ล็อกสูตรเสถียร V4.7) ]]
+-- [[ 3. ฟังก์ชันดึงชื่อเควสปัจจุบัน ]]
 local function GetCurrentObjectiveName()
     local objectives = Workspace:FindFirstChild("Objectives")
     if objectives then
@@ -67,7 +64,7 @@ local function GetCurrentObjectiveName()
     return ""
 end
 
--- [[ 4. ระบบ Global Scanner: สแกนหาพิกัดมอนสเตอร์ (ล็อกสูตรเสถียร V4.7) ]]
+-- [[ 4. ระบบ Global Scanner ]]
 local function GetCurrentZombie()
     local folder = Workspace:FindFirstChild("Zombies")
     if not folder then return nil, nil end
@@ -99,7 +96,7 @@ local function CastAllSkills()
     end
 end
 
--- [[ 6. ลูปอิสระที่ 1: ระบบวาปฟาร์มมอนสเตอร์ดักจับข้าม Section ]]
+-- [[ 6. ลูปอิสระที่ 1: ระบบวาปฟาร์มมอนสเตอร์ ]]
 task.spawn(function()
     while true do
         task.wait()
@@ -118,10 +115,7 @@ task.spawn(function()
                         if targetHum and targetHum.Health <= 0 then break end
                         if GetCurrentObjectiveName() ~= startObjective then break end
                         
-                        -- หยุดพุ่งชั่วคราวถ้าเปิดโหมดวิ่งไปเคลียร์เกทประตู
-                        if not _G_IsGoingToGate then
-                            myRoot.CFrame = targetPart.CFrame * CFrame.new(0, 0, _G_Distance)
-                        end
+                        myRoot.CFrame = targetPart.CFrame * CFrame.new(0, 0, _G_Distance)
                     end
                 end
             end
@@ -129,7 +123,7 @@ task.spawn(function()
     end
 end)
 
--- [[ 7. ลูปอิสระที่ 2: ระบบ Auto Skill ]]
+-- [[ 7. ลูปอิสระที่ 2: ระบบ Auto Skill ตามระยะเวลาสไลเดอร์ ]]
 task.spawn(function()
     while true do
         task.wait(0.1)
@@ -143,54 +137,35 @@ task.spawn(function()
     end
 end)
 
--- [[ 8. ลูปอิสระที่ 3: ระบบสแกนพุ่งแตะ Hitbox ประตูเกทอัตโนมัติ ]]
+-- [[ 8. ลูปอิสระที่ 3: ระบบ Auto Start & Auto Retry ]]
 task.spawn(function()
     while true do
-        task.wait(0.1)
-        if _G_TPGates then
-            local mapFolder = Workspace:FindFirstChild("Map")
-            local gatesFolder = mapFolder and mapFolder:FindFirstChild("Gates")
-            local char = LocalPlayer.Character
-            local myRoot = char and char:FindFirstChild("HumanoidRootPart")
-
-            if gatesFolder and myRoot then
-                local gates = gatesFolder:GetChildren()
-                if #gates > 0 then
-                    for _, gate in pairs(gates) do
-                        if not _G_TPGates then break end
-                        
-                        local hitbox = gate:FindFirstChild("Hitbox")
-                        if hitbox and hitbox:IsA("BasePart") then
-                            pcall(function()
-                                _G_IsGoingToGate = true 
-                                myRoot.CFrame = hitbox.CFrame 
-                                task.wait(0.15) 
-                            end)
-                        end
-                    end
-                else
-                    _G_IsGoingToGate = false
+        task.wait(3) 
+        if _G_Farming then
+            pcall(function()
+                local interactRemote = ReplicatedStorage:WaitForChild("Assets", 3):WaitForChild("Remotes", 3):WaitForChild("Interact", 3)
+                if interactRemote then
+                    interactRemote:FireServer("VoteSkipRaid")
+                    interactRemote:FireServer("PlayAgain")
                 end
-            else
-                _G_IsGoingToGate = false
-            end
-        else
-            _G_IsGoingToGate = false
+            end)
         end
     end
 end)
 
--- [[ 9. การสร้าง GUI V5.2 (สัดส่วนกระชับขึ้นหลังถอดระบบแม่เหล็ก) ]]
+-- [[ 9. การสร้าง GUI V5.4 ]]
 local UI_Parent = (pcall(function() return game:GetService("CoreGui").Name end) and game:GetService("CoreGui")) or LocalPlayer:WaitForChild("PlayerGui")
-if UI_Parent:FindFirstChild("LunaHubV5_2") then UI_Parent.LunaHubV5_2:Destroy() end
+if UI_Parent:FindFirstChild("LunaHubV5_3") then UI_Parent.LunaHubV5_3:Destroy() end
+if UI_Parent:FindFirstChild("LunaHubV5_4") then UI_Parent.LunaHubV5_4:Destroy() end
 
 local ScreenGui = Instance.new("ScreenGui")
-ScreenGui.Name = "LunaHubV5_2"
+ScreenGui.Name = "LunaHubV5_4"
 ScreenGui.Parent = UI_Parent
 
 local MainFrame = Instance.new("Frame")
-MainFrame.Size = UDim2.new(0, 260, 0, 180) -- ปรับขนาดสั้นกระชับ สวยงามพอดีจอ
-MainFrame.Position = UDim2.new(0.5, -125, 0.5, -90)
+MainFrame.Size = UDim2.new(0, 260, 0, 215)
+-- 🚨 ปรับพิกัดใหม่ให้ชิดซ้าย (X = 20 พิกเซลจากขอบจอ, Y = กึ่งกลางจอ)
+MainFrame.Position = UDim2.new(0, 20, 0.5, -107)
 MainFrame.BackgroundColor3 = Color3.fromRGB(25, 25, 30)
 MainFrame.BorderSizePixel = 0
 MainFrame.Active = true
@@ -201,34 +176,23 @@ local Title = Instance.new("TextLabel")
 Title.Size = UDim2.new(1, 0, 0, 30)
 Title.BackgroundColor3 = Color3.fromRGB(40, 40, 45)
 Title.TextColor3 = Color3.fromRGB(255, 255, 255)
-Title.Text = "Luna Hub | V5.2 Pure Core [P]"
+Title.Text = "Luna Hub | V5.4 Left Aligned"
 Title.Font = Enum.Font.GothamBold
 Title.TextSize = 12
 Title.Parent = MainFrame
 
 local ToggleBtn = Instance.new("TextButton")
-ToggleBtn.Size = UDim2.new(0.42, 0, 0, 30)
+ToggleBtn.Size = UDim2.new(0.9, 0, 0, 30)
 ToggleBtn.Position = UDim2.new(0.05, 0, 0, 40)
 ToggleBtn.BackgroundColor3 = _G_Farming and Color3.fromRGB(50, 200, 50) or Color3.fromRGB(200, 50, 50)
 ToggleBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
-ToggleBtn.Text = "FARM: " .. (_G_Farming and "ON" or "OFF")
+ToggleBtn.Text = "FARM & AUTO MATCH: " .. (_G_Farming and "ON" or "OFF")
 ToggleBtn.Font = Enum.Font.GothamBold
 ToggleBtn.TextSize = 11
 ToggleBtn.Parent = MainFrame
 Instance.new("UICorner", ToggleBtn).CornerRadius = UDim.new(0, 5)
 
-local GateBtn = Instance.new("TextButton")
-GateBtn.Size = UDim2.new(0.42, 0, 0, 30)
-GateBtn.Position = UDim2.new(0.53, 0, 0, 40)
-GateBtn.BackgroundColor3 = _G_TPGates and Color3.fromRGB(50, 200, 50) or Color3.fromRGB(200, 150, 50)
-GateBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
-GateBtn.Text = "AUTO GATE: " .. (_G_TPGates and "ON" or "OFF")
-GateBtn.Font = Enum.Font.GothamBold
-GateBtn.TextSize = 10
-GateBtn.Parent = MainFrame
-Instance.new("UICorner", GateBtn).CornerRadius = UDim.new(0, 5)
-
--- ปุ่มเลือกสกิลยึดพิกัดเดิมตามไฟล์เซฟ
+-- ปุ่มสกิล
 local skillKeys = {"Z", "X", "C", "V", "E", "G"}
 for i, key in ipairs(skillKeys) do
     local sBtn = Instance.new("TextButton")
@@ -249,69 +213,94 @@ for i, key in ipairs(skillKeys) do
     end)
 end
 
-local SliderTitle = Instance.new("TextLabel")
-SliderTitle.Size = UDim2.new(1, 0, 0, 20)
-SliderTitle.Position = UDim2.new(0, 0, 0, 115)
-SliderTitle.BackgroundTransparency = 1
-SliderTitle.TextColor3 = Color3.fromRGB(200, 200, 200)
-SliderTitle.Text = "Distance: " .. _G_Distance
-SliderTitle.Font = Enum.Font.Gotham
-SliderTitle.TextSize = 12
-SliderTitle.Parent = MainFrame
+-- สไลเดอร์ 1: ระยะห่าง
+local DistTitle = Instance.new("TextLabel")
+DistTitle.Size = UDim2.new(1, 0, 0, 20)
+DistTitle.Position = UDim2.new(0, 0, 0, 115)
+DistTitle.BackgroundTransparency = 1
+DistTitle.TextColor3 = Color3.fromRGB(200, 200, 200)
+DistTitle.Text = "Distance: " .. _G_Distance
+DistTitle.Font = Enum.Font.Gotham
+DistTitle.TextSize = 12
+DistTitle.Parent = MainFrame
 
-local SliderBG = Instance.new("TextButton")
-SliderBG.Size = UDim2.new(0.8, 0, 0, 10)
-SliderBG.Position = UDim2.new(0.1, 0, 0, 140)
-SliderBG.BackgroundColor3 = Color3.fromRGB(50, 50, 55)
-SliderBG.Text = ""
-SliderBG.Parent = MainFrame
+local DistBG = Instance.new("TextButton")
+DistBG.Size = UDim2.new(0.8, 0, 0, 10)
+DistBG.Position = UDim2.new(0.1, 0, 0, 140)
+DistBG.BackgroundColor3 = Color3.fromRGB(50, 50, 55)
+DistBG.Text = ""
+DistBG.Parent = MainFrame
 
-local SliderFill = Instance.new("Frame")
-SliderFill.Size = UDim2.new(_G_Distance / 20, 0, 1, 0)
-SliderFill.BackgroundColor3 = Color3.fromRGB(80, 150, 255)
-SliderFill.Parent = SliderBG
+local DistFill = Instance.new("Frame")
+DistFill.Size = UDim2.new(_G_Distance / 20, 0, 1, 0)
+DistFill.BackgroundColor3 = Color3.fromRGB(80, 150, 255)
+DistFill.Parent = DistBG
 
--- [[ 10. ระบบผูกปุ่มคีย์บอร์ดและเมาส์ ]]
+-- สไลเดอร์ 2: เวลาหน่วงสกิล
+local DelayTitle = Instance.new("TextLabel")
+DelayTitle.Size = UDim2.new(1, 0, 0, 20)
+DelayTitle.Position = UDim2.new(0, 0, 0, 160)
+DelayTitle.BackgroundTransparency = 1
+DelayTitle.TextColor3 = Color3.fromRGB(200, 200, 200)
+DelayTitle.Text = "Skill Delay: " .. string.format("%.1f", _G_SkillDelay) .. "s"
+DelayTitle.Font = Enum.Font.Gotham
+DelayTitle.TextSize = 12
+DelayTitle.Parent = MainFrame
+
+local DelayBG = Instance.new("TextButton")
+DelayBG.Size = UDim2.new(0.8, 0, 0, 10)
+DelayBG.Position = UDim2.new(0.1, 0, 0, 185)
+DelayBG.BackgroundColor3 = Color3.fromRGB(50, 50, 55)
+DelayBG.Text = ""
+DelayBG.Parent = MainFrame
+
+local DelayFill = Instance.new("Frame")
+local minD, maxD = 0.1, 5.0
+DelayFill.Size = UDim2.new((_G_SkillDelay - minD) / (maxD - minD), 0, 1, 0)
+DelayFill.BackgroundColor3 = Color3.fromRGB(255, 100, 100)
+DelayFill.Parent = DelayBG
+
+-- [[ 10. ระบบผูกปุ่มและการลากสไลเดอร์ ]]
 ToggleBtn.MouseButton1Click:Connect(function()
     _G_Farming = not _G_Farming
     ToggleBtn.BackgroundColor3 = _G_Farming and Color3.fromRGB(50, 200, 50) or Color3.fromRGB(200, 50, 50)
-    ToggleBtn.Text = "FARM: " .. (_G_Farming and "ON" or "OFF")
+    ToggleBtn.Text = "FARM & AUTO MATCH: " .. (_G_Farming and "ON" or "OFF")
     SaveSettings()
 end)
 
-GateBtn.MouseButton1Click:Connect(function()
-    _G_TPGates = not _G_TPGates
-    GateBtn.BackgroundColor3 = _G_TPGates and Color3.fromRGB(50, 200, 50) or Color3.fromRGB(200, 150, 50)
-    GateBtn.Text = "AUTO GATE: " .. (_G_TPGates and "ON" or "OFF")
-    SaveSettings()
-end)
-
--- 🚨 ฟังก์ชันคีย์ลัด ปุ่ม P สำหรับย่อ/เปิดหน้าต่าง GUI อัตโนมัติ
 UserInputService.InputBegan:Connect(function(input, gameProcessed)
     if not gameProcessed and input.KeyCode == Enum.KeyCode.P then
         MainFrame.Visible = not MainFrame.Visible
     end
 end)
 
-local dragging = false
-SliderBG.MouseButton1Down:Connect(function() dragging = true end)
+local dragDist, dragDelay = false, false
+DistBG.MouseButton1Down:Connect(function() dragDist = true end)
+DelayBG.MouseButton1Down:Connect(function() dragDelay = true end)
+
 UserInputService.InputEnded:Connect(function(input)
     if input.UserInputType == Enum.UserInputType.MouseButton1 then 
-        if dragging then SaveSettings() end
-        dragging = false 
+        if dragDist or dragDelay then SaveSettings() end
+        dragDist, dragDelay = false, false 
     end
 end)
 
 UserInputService.InputChanged:Connect(function(input)
-    if dragging and input.UserInputType == Enum.UserInputType.MouseMovement then
+    if input.UserInputType == Enum.UserInputType.MouseMovement then
         local mousePos = UserInputService:GetMouseLocation().X
-        local sliderPos = SliderBG.AbsolutePosition.X
-        local sliderSize = SliderBG.AbsoluteSize.X
         
-        local percent = math.clamp((mousePos - sliderPos) / sliderSize, 0, 1)
-        _G_Distance = math.floor(5 + (percent * 20)) 
+        if dragDist then
+            local p = math.clamp((mousePos - DistBG.AbsolutePosition.X) / DistBG.AbsoluteSize.X, 0, 1)
+            _G_Distance = math.floor(5 + (p * 20)) 
+            DistFill.Size = UDim2.new(p, 0, 1, 0)
+            DistTitle.Text = "Distance: " .. _G_Distance
+        end
         
-        SliderFill.Size = UDim2.new(percent, 0, 1, 0)
-        SliderTitle.Text = "Distance: " .. _G_Distance
+        if dragDelay then
+            local p = math.clamp((mousePos - DelayBG.AbsolutePosition.X) / DelayBG.AbsoluteSize.X, 0, 1)
+            _G_SkillDelay = minD + (p * (maxD - minD))
+            DelayFill.Size = UDim2.new(p, 0, 1, 0)
+            DelayTitle.Text = "Skill Delay: " .. string.format("%.1f", _G_SkillDelay) .. "s"
+        end
     end
 end)
