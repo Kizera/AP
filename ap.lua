@@ -8,28 +8,11 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local LocalPlayer = Players.LocalPlayer
 _G_Farming = true
 _G_Magnet = true 
-_G_IsCollecting = false -- ตัวแปรระบบกันลูปพิกัดตีกันเอง
+_G_IsCollecting = false 
 _G_Distance = 7
 _G_SkillDelay = 0.5 
 
--- [[ 2. ระบบทำลายอนิเมชั่นสกิล (Fast Attack / No Cast Time) ]]
-task.spawn(function()
-    pcall(function()
-        local animsFolder = ReplicatedStorage:WaitForChild("Assets", 5)
-        if animsFolder then animsFolder = animsFolder:WaitForChild("Anims", 5) end
-        
-        if animsFolder then
-            for _, anim in pairs(animsFolder:GetDescendants()) do
-                if anim:IsA("Animation") then anim.AnimationId = "" end
-            end
-            animsFolder.DescendantAdded:Connect(function(anim)
-                if anim:IsA("Animation") then anim.AnimationId = "" end
-            end)
-        end
-    end)
-end)
-
--- [[ 3. ฟังก์ชันดึงชื่อเควสปัจจุบัน ]]
+-- [[ 2. ฟังก์ชันดึงชื่อเควสปัจจุบัน ]]
 local function GetCurrentObjectiveName()
     local objectives = Workspace:FindFirstChild("Objectives")
     if objectives then
@@ -39,7 +22,7 @@ local function GetCurrentObjectiveName()
     return ""
 end
 
--- [[ 4. ระบบค้นหาเป้าหมาย (มุดทะลวงหา RootPart ในโฟลเดอร์ Zombies) ]]
+-- [[ 3. ระบบค้นหาเป้าหมาย (มุดทะลวงหา RootPart) ]]
 local function GetCurrentZombie()
     local folder = Workspace:FindFirstChild("Zombies")
     if not folder then return nil, nil end
@@ -56,7 +39,7 @@ local function GetCurrentZombie()
     return nil, nil
 end
 
--- [[ 5. ฟังก์ชันออโต้สกิลชุดเต็มตามขอ (Z, X, C, V, E, G) ]]
+-- [[ 4. ฟังก์ชันออโต้สกิล (Z, X, C, V, E, G) ]]
 local skills = {"Z", "X", "C", "V", "E", "G"}
 local function CastAllSkills()
     for _, key in pairs(skills) do
@@ -70,7 +53,7 @@ local function CastAllSkills()
     end
 end
 
--- [[ 6. ลูปอิสระที่ 1: ระบบวาปฟาร์มมอนสเตอร์ ]]
+-- [[ 5. ลูปอิสระที่ 1: ระบบวาปฟาร์มมอนสเตอร์ ]]
 task.spawn(function()
     while true do
         task.wait()
@@ -89,7 +72,7 @@ task.spawn(function()
                         if targetHum and targetHum.Health <= 0 then break end
                         if GetCurrentObjectiveName() ~= startObjective then break end
                         
-                        -- 🚨 ลอจิกสำคัญ: ถ้ากำลังวาร์ปไปเก็บของดรอปพื้น ให้หยุดล็อกพิกัดมอนสเตอร์ชั่วคราว
+                        -- หยุดพุ่งใส่มอนสเตอร์ชั่วคราว ถ้าระบบกำลังวาร์ปไปเก็บของ
                         if not _G_IsCollecting then
                             myRoot.CFrame = targetPart.CFrame * CFrame.new(0, 0, _G_Distance)
                         end
@@ -100,7 +83,7 @@ task.spawn(function()
     end
 end)
 
--- [[ 7. ลูปอิสระที่ 2: ระบบ Auto Skill ]]
+-- [[ 6. ลูปอิสระที่ 2: ระบบ Auto Skill ]]
 task.spawn(function()
     while true do
         task.wait(0.1)
@@ -114,10 +97,10 @@ task.spawn(function()
     end
 end)
 
--- [[ 8. ลูปอิสระที่ 3: ระบบ Flash TP Magnet (วาร์ปตัวเราไปเหยียบเก็บของ) ]]
+-- [[ 7. ลูปอิสระที่ 3: ระบบ Flash TP Magnet (วาร์ปตัวเราไปเหยียบเก็บของ) ]]
 task.spawn(function()
     while true do
-        task.wait(0.1) -- สแกนหาของตกพื้นแบบเรียลไทม์
+        task.wait(0.1) 
         if _G_Magnet then
             local thrownFolder = Workspace:FindFirstChild("Thrown")
             local char = LocalPlayer.Character
@@ -129,23 +112,19 @@ task.spawn(function()
                 for _, obj in pairs(thrownFolder:GetDescendants()) do
                     if not _G_Magnet then break end
                     
-                    -- ค้นหาเฉพาะวัตถุที่มีสิทธิ์สัมผัสเพื่อเก็บไอเทมได้จริง (TouchInterest)
                     if obj.Name == "TouchInterest" or obj:IsA("TouchTransmitter") then
                         local itemHitbox = obj.Parent
                         if itemHitbox and itemHitbox:IsA("BasePart") then
                             foundItems = true
                             pcall(function()
-                                _G_IsCollecting = true -- สั่งเปิดโหมดเก็บของเพื่อหยุดลูปฟาร์มชั่วคราว
-                                
-                                -- วาร์ปตัวเราไปพิกัดของกล่องไอเทมชิ้นนั้นทันที
+                                _G_IsCollecting = true 
                                 myRoot.CFrame = itemHitbox.CFrame
-                                task.wait(0.06) -- เปิดจังหวะหน่วงเวลา 0.06 วินาทีให้เซิร์ฟเวอร์รับรู้การแตะวัตถุ
+                                task.wait(0.06) 
                             end)
                         end
                     end
                 end
                 
-                -- เมื่อเคลียร์ของตกพื้นรอบตัวหมดแล้ว ปิดโหมดเก็บของเพื่อกลับไปฟาร์มมอนสเตอร์ต่อ
                 if not foundItems or not _G_Magnet then
                     _G_IsCollecting = false
                 end
@@ -159,12 +138,12 @@ task.spawn(function()
     end
 end)
 
--- [[ 9. การสร้าง GUI V4.6 ]]
+-- [[ 8. การสร้าง GUI ]]
 local UI_Parent = (pcall(function() return game:GetService("CoreGui").Name end) and game:GetService("CoreGui")) or LocalPlayer:WaitForChild("PlayerGui")
-if UI_Parent:FindFirstChild("LunaHubV4_6") then UI_Parent.LunaHubV4_6:Destroy() end
+if UI_Parent:FindFirstChild("LunaHubV4_7") then UI_Parent.LunaHubV4_7:Destroy() end
 
 local ScreenGui = Instance.new("ScreenGui")
-ScreenGui.Name = "LunaHubV4_6"
+ScreenGui.Name = "LunaHubV4_7"
 ScreenGui.Parent = UI_Parent
 
 local MainFrame = Instance.new("Frame")
@@ -180,7 +159,7 @@ local Title = Instance.new("TextLabel")
 Title.Size = UDim2.new(1, 0, 0, 30)
 Title.BackgroundColor3 = Color3.fromRGB(40, 40, 45)
 Title.TextColor3 = Color3.fromRGB(255, 255, 255)
-Title.Text = "Luna Hub | V4.6 Player Magnet"
+Title.Text = "Luna Hub | V4.7 Final Clean"
 Title.Font = Enum.Font.GothamBold
 Title.TextSize = 12
 Title.Parent = MainFrame
