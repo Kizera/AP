@@ -11,7 +11,7 @@ _G_Magnet = true
 _G_Distance = 7
 _G_SkillDelay = 0.5 
 
--- [[ 2. ระบบทำลายอนิเมชั่นสกิล (Fast Attack / No Cast Time) ]]
+-- [[ 2. ระบบทำลายอนิเมชั่นสกิล (Fast Attack) ]]
 task.spawn(function()
     pcall(function()
         local animsFolder = ReplicatedStorage:WaitForChild("Assets", 5)
@@ -20,20 +20,12 @@ task.spawn(function()
         end
         
         if animsFolder then
-            -- 1. กวาดลบ ID อนิเมชั่นที่มีอยู่แล้วทั้งหมด
             for _, anim in pairs(animsFolder:GetDescendants()) do
-                if anim:IsA("Animation") then
-                    anim.AnimationId = "" 
-                end
+                if anim:IsA("Animation") then anim.AnimationId = "" end
             end
-            
-            -- 2. ดักจับอนิเมชั่นใหม่ที่อาจจะเกิดตอนขึ้นด่านใหม่ แล้วลบทิ้งทันที
             animsFolder.DescendantAdded:Connect(function(anim)
-                if anim:IsA("Animation") then
-                    anim.AnimationId = ""
-                end
+                if anim:IsA("Animation") then anim.AnimationId = "" end
             end)
-            print("Luna Hub: ทำลายระบบอนิเมชั่นร่ายสกิลสำเร็จ (Fast Attack Ready)")
         end
     end)
 end)
@@ -48,26 +40,28 @@ local function GetCurrentObjectiveName()
     return ""
 end
 
--- [[ 4. ระบบค้นหาเป้าหมาย (มุดหาแบบ Deep Scan ทะลวง Model) ]]
+-- [[ 4. ระบบค้นหาเป้าหมาย (หา RootPart โดยตรง ไม่สน Model หรือ Humanoid) ]]
 local function GetCurrentZombie()
     local folder = Workspace:FindFirstChild("Zombies")
     if not folder then return nil, nil end
     
-    -- ใช้ GetDescendants() เพื่อมุดหา Model ที่ซ้อนอยู่ข้างในให้เจอ
-    for _, obj in pairs(folder:GetDescendants()) do
-        if obj:IsA("Model") then
-            local root = obj:FindFirstChild("HumanoidRootPart") or obj:FindFirstChild("Torso") or obj.PrimaryPart
-            local hum = obj:FindFirstChildOfClass("Humanoid")
+    -- มุดทะลวงหาชิ้นส่วนเป้าหมายโดยตรง (ทะลุ Folder และ Model 100%)
+    for _, part in pairs(folder:GetDescendants()) do
+        if (part.Name == "HumanoidRootPart" or part.Name == "Torso") and part:IsA("BasePart") then
+            local mob = part.Parent
+            local hum = mob:FindFirstChildOfClass("Humanoid")
             
-            if root and hum and hum.Health > 0 then
-                return root, hum
+            -- ถ้าเกมนี้ยังใช้ Humanoid อยู่ ให้เช็คว่าเลือด > 0
+            -- แต่ถ้าเกมนี้ไม่มี Humanoid แล้ว ให้ถือว่ามันยังมีชีวิตอยู่และลุยได้เลย
+            if not hum or hum.Health > 0 then
+                return part, hum
             end
         end
     end
     return nil, nil
 end
 
--- [[ 5. ฟังก์ชันออโต้สกิลชุดเต็ม (Z, X, C, V, E, G) ]]
+-- [[ 5. ฟังก์ชันออโต้สกิล (Z, X, C, V, E, G) ]]
 local skills = {"Z", "X", "C", "V", "E", "G"}
 local function CastAllSkills()
     for _, key in pairs(skills) do
@@ -81,7 +75,7 @@ local function CastAllSkills()
     end
 end
 
--- [[ 6. ลูปอิสระที่ 1: ระบบวาปฟาร์ม + ตัวดักจับเควส ]]
+-- [[ 6. ลูปอิสระที่ 1: ระบบวาปฟาร์มเจาะลึก ]]
 task.spawn(function()
     while true do
         task.wait()
@@ -95,9 +89,13 @@ task.spawn(function()
                     
                     local startObjective = GetCurrentObjectiveName()
                     
-                    while _G_Farming and targetPart and targetPart.Parent and (targetHum and targetHum.Health > 0) do
+                    -- ล็อกเป้าจนกว่า RootPart จะพัง/หายไป หรือถ้ามี Humanoid ก็จนกว่าเลือดจะหมด
+                    while _G_Farming and targetPart and targetPart.Parent do
                         task.wait()
                         if not LocalPlayer.Character or not LocalPlayer.Character:FindFirstChild("HumanoidRootPart") then break end
+                        
+                        -- ถ้ามีระบบ Humanoid และเลือดเหลือ 0 ให้เบรกลูปหาเป้าหมายใหม่
+                        if targetHum and targetHum.Health <= 0 then break end
                         
                         -- รีเซ็ตล็อคเป้าทันทีที่ Section เควสเปลี่ยน
                         if GetCurrentObjectiveName() ~= startObjective then break end
@@ -124,7 +122,7 @@ task.spawn(function()
     end
 end)
 
--- [[ 8. ลูปอิสระที่ 3: ระบบแม่เหล็กดูด TouchInterest ]]
+-- [[ 8. ลูปอิสระที่ 3: ระบบแม่เหล็ก TouchInterest ]]
 task.spawn(function()
     while true do
         task.wait(0.15)
@@ -149,12 +147,12 @@ task.spawn(function()
     end
 end)
 
--- [[ 9. การสร้าง GUI V4.4 ]]
+-- [[ 9. การสร้าง GUI V4.5 ]]
 local UI_Parent = (pcall(function() return game:GetService("CoreGui").Name end) and game:GetService("CoreGui")) or LocalPlayer:WaitForChild("PlayerGui")
-if UI_Parent:FindFirstChild("LunaHubV4_4") then UI_Parent.LunaHubV4_4:Destroy() end
+if UI_Parent:FindFirstChild("LunaHubV4_5") then UI_Parent.LunaHubV4_5:Destroy() end
 
 local ScreenGui = Instance.new("ScreenGui")
-ScreenGui.Name = "LunaHubV4_4"
+ScreenGui.Name = "LunaHubV4_5"
 ScreenGui.Parent = UI_Parent
 
 local MainFrame = Instance.new("Frame")
@@ -170,7 +168,7 @@ local Title = Instance.new("TextLabel")
 Title.Size = UDim2.new(1, 0, 0, 30)
 Title.BackgroundColor3 = Color3.fromRGB(40, 40, 45)
 Title.TextColor3 = Color3.fromRGB(255, 255, 255)
-Title.Text = "Luna Hub | V4.4 Deep Scan"
+Title.Text = "Luna Hub | V4.5 Root Tracker"
 Title.Font = Enum.Font.GothamBold
 Title.TextSize = 12
 Title.Parent = MainFrame
