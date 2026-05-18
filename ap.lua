@@ -7,16 +7,17 @@ local HttpService = game:GetService("HttpService")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 local LocalPlayer = Players.LocalPlayer
-local configFileName = "LunaHub_V5_5_Save.json"
+local configFileName = "LunaHub_V5_6_Save.json"
 
 -- ค่าเริ่มต้นระบบ
 _G_Farming = true
 _G_Distance = 7
 _G_SkillDelay = 0.5 
 
+-- เพิ่ม F เข้ามาในระบบ
 _G_SkillStates = {
     Z = true, X = true, C = true, 
-    V = true, E = true, G = true
+    V = true, F = true, E = true, G = true
 }
 
 -- [[ 2. ระบบ Save / Load ]]
@@ -44,7 +45,8 @@ local function LoadSettings()
                     _G_Distance = result.Distance or 7
                     _G_SkillDelay = result.SkillDelay or 0.5
                     if result.SkillStates then
-                        _G_SkillStates = result.SkillStates
+                        -- โหลดค่าเดิมและเติม F เข้าไปถ้าไฟล์เซฟเก่าไม่มี
+                        for k, v in pairs(result.SkillStates) do _G_SkillStates[k] = v end
                     end
                 end
             end
@@ -96,7 +98,7 @@ local function CastAllSkills()
     end
 end
 
--- [[ 6. ลูปอิสระที่ 1: ระบบวาปฟาร์มมอนสเตอร์ ]]
+-- [[ 6. ลูปอิสระที่ 1: ระบบฟาร์มและ Smart Sweeper (หาเกท/ประตูจบ) ]]
 task.spawn(function()
     while true do
         task.wait()
@@ -106,6 +108,8 @@ task.spawn(function()
             
             if myRoot then
                 local targetPart, targetHum = GetCurrentZombie()
+                
+                -- กรณีที่ 1: เจอมอนสเตอร์ -> ฟาร์มปกติ
                 if targetPart and targetPart.Parent then
                     local startObjective = GetCurrentObjectiveName()
                     
@@ -117,6 +121,51 @@ task.spawn(function()
                         
                         myRoot.CFrame = targetPart.CFrame * CFrame.new(0, 0, _G_Distance)
                     end
+                else
+                    -- กรณีที่ 2: มอนหมดแมพ -> ระบบ Smart Sweeper จะทำงาน
+                    local mapFolder = Workspace:FindFirstChild("Map")
+                    if mapFolder then
+                        
+                        -- สเต็ป A: มุดหา Hitbox ใน Gates เผื่อต้องเปิดประตูให้มอนเกิด
+                        local gatesFolder = mapFolder:FindFirstChild("Gates")
+                        if gatesFolder and #gatesFolder:GetChildren() > 0 then
+                            for _, gate in pairs(gatesFolder:GetChildren()) do
+                                if not _G_Farming then break end
+                                local hitbox = gate:FindFirstChild("Hitbox") or gate:FindFirstChildWhichIsA("BasePart", true)
+                                if hitbox then
+                                    pcall(function()
+                                        myRoot.CFrame = hitbox.CFrame
+                                        task.wait(0.1) -- แตะเพื่อเปิดเกท
+                                    end)
+                                end
+                            end
+                        end
+                        
+                        -- สเต็ป B: มุดหา portique (ประตูห้องบอส/จบด่าน) แล้วกด E
+                        local objFolder = mapFolder:FindFirstChild("Objective")
+                        if objFolder then
+                            local entries = objFolder:FindFirstChild("Entries")
+                            if entries then
+                                for _, obj in pairs(entries:GetDescendants()) do
+                                    if obj.Name:lower():find("portique") and obj:IsA("BasePart") then
+                                        pcall(function()
+                                            myRoot.CFrame = obj.CFrame
+                                            -- จำลองกดปุ่ม E
+                                            VIM:SendKeyEvent(true, Enum.KeyCode.E, false, game)
+                                            task.wait(0.1)
+                                            VIM:SendKeyEvent(false, Enum.KeyCode.E, false, game)
+                                            
+                                            -- เสริมความชัวร์: สั่งรัน ProximityPrompt (ถ้ามี)
+                                            local prompt = obj:FindFirstChildWhichIsA("ProximityPrompt", true) or obj.Parent:FindFirstChildWhichIsA("ProximityPrompt", true)
+                                            if prompt then fireproximityprompt(prompt) end
+                                        end)
+                                        break
+                                    end
+                                end
+                            end
+                        end
+                    end
+                    task.wait(0.5) -- หน่วงเวลาป้องกันลูปกระตุกช่วงรอโหลดมอน/ด่าน
                 end
             end
         end
@@ -137,7 +186,7 @@ task.spawn(function()
     end
 end)
 
--- [[ 8. ลูปอิสระที่ 3: ระบบ Auto Start (เหลือเฉพาะเคลียร์ข้ามห้องแรด) ]]
+-- [[ 8. ลูปอิสระที่ 3: ระบบ Auto Start (VoteSkipRaid) ]]
 task.spawn(function()
     while true do
         task.wait(3) 
@@ -152,14 +201,13 @@ task.spawn(function()
     end
 end)
 
--- [[ 9. การสร้าง GUI V5.5 (ชิดซ้ายจอ) ]]
+-- [[ 9. การสร้าง GUI V5.6 ]]
 local UI_Parent = (pcall(function() return game:GetService("CoreGui").Name end) and game:GetService("CoreGui")) or LocalPlayer:WaitForChild("PlayerGui")
-if UI_Parent:FindFirstChild("LunaHubV4_9") then UI_Parent.LunaHubV4_9:Destroy() end
-if UI_Parent:FindFirstChild("LunaHubV5_4") then UI_Parent.LunaHubV5_4:Destroy() end
 if UI_Parent:FindFirstChild("LunaHubV5_5") then UI_Parent.LunaHubV5_5:Destroy() end
+if UI_Parent:FindFirstChild("LunaHubV5_6") then UI_Parent.LunaHubV5_6:Destroy() end
 
 local ScreenGui = Instance.new("ScreenGui")
-ScreenGui.Name = "LunaHubV5_5"
+ScreenGui.Name = "LunaHubV5_6"
 ScreenGui.Parent = UI_Parent
 
 local MainFrame = Instance.new("Frame")
@@ -175,7 +223,7 @@ local Title = Instance.new("TextLabel")
 Title.Size = UDim2.new(1, 0, 0, 30)
 Title.BackgroundColor3 = Color3.fromRGB(40, 40, 45)
 Title.TextColor3 = Color3.fromRGB(255, 255, 255)
-Title.Text = "Luna Hub | V5.5 Pure Auto Start"
+Title.Text = "Luna Hub | V5.6 Smart Sweeper"
 Title.Font = Enum.Font.GothamBold
 Title.TextSize = 12
 Title.Parent = MainFrame
@@ -191,17 +239,18 @@ ToggleBtn.TextSize = 11
 ToggleBtn.Parent = MainFrame
 Instance.new("UICorner", ToggleBtn).CornerRadius = UDim.new(0, 5)
 
--- ปุ่มสกิล
-local skillKeys = {"Z", "X", "C", "V", "E", "G"}
+-- ปุ่มสกิล 7 ปุ่ม (เพิ่ม F และจัดระยะให้พอดี)
+local skillKeys = {"Z", "X", "C", "V", "F", "E", "G"}
 for i, key in ipairs(skillKeys) do
     local sBtn = Instance.new("TextButton")
-    sBtn.Size = UDim2.new(0.13, 0, 0, 25)
-    sBtn.Position = UDim2.new(0.05 + ((i - 1) * 0.15), 0, 0, 80)
+    sBtn.Size = UDim2.new(0.11, 0, 0, 25)
+    -- กระจายตำแหน่งให้ 7 ปุ่มอยู่แถวเดียวกันอย่างสมดุล
+    sBtn.Position = UDim2.new(0.04 + ((i - 1) * 0.13), 0, 0, 80)
     sBtn.BackgroundColor3 = _G_SkillStates[key] and Color3.fromRGB(50, 200, 50) or Color3.fromRGB(200, 50, 50)
     sBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
     sBtn.Text = key
     sBtn.Font = Enum.Font.GothamBold
-    sBtn.TextSize = 11
+    sBtn.TextSize = 10
     sBtn.Parent = MainFrame
     Instance.new("UICorner", sBtn).CornerRadius = UDim.new(0, 4)
     
