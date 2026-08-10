@@ -11,6 +11,7 @@ local configFileName = "LunaHub_V5_6_Save.json"
 
 -- ค่าเริ่มต้นระบบ
 _G_Farming = true
+_G_AutoClick = true -- เพิ่มตัวแปรออโต้คลิก
 _G_Distance = 7
 _G_SkillDelay = 0.5 
 
@@ -26,6 +27,7 @@ local function SaveSettings()
         pcall(function()
             local data = {
                 Farming = _G_Farming,
+                AutoClick = _G_AutoClick, -- เซฟค่าออโต้คลิก
                 Distance = _G_Distance,
                 SkillDelay = _G_SkillDelay,
                 SkillStates = _G_SkillStates
@@ -42,10 +44,10 @@ local function LoadSettings()
                 local result = HttpService:JSONDecode(readfile(configFileName))
                 if result then
                     _G_Farming = result.Farming ~= nil and result.Farming or true
+                    _G_AutoClick = result.AutoClick ~= nil and result.AutoClick or true
                     _G_Distance = result.Distance or 7
                     _G_SkillDelay = result.SkillDelay or 0.5
                     if result.SkillStates then
-                        -- โหลดค่าเดิมและเติม F เข้าไปถ้าไฟล์เซฟเก่าไม่มี
                         for k, v in pairs(result.SkillStates) do _G_SkillStates[k] = v end
                     end
                 end
@@ -98,7 +100,7 @@ local function CastAllSkills()
     end
 end
 
--- [[ 6. ลูปอิสระที่ 1: ระบบฟาร์มและ Smart Sweeper (หาเกท/ประตูจบ) ]]
+-- [[ 6. ลูปอิสระที่ 1: ระบบฟาร์มและ Smart Sweeper ]]
 task.spawn(function()
     while true do
         task.wait()
@@ -109,7 +111,6 @@ task.spawn(function()
             if myRoot then
                 local targetPart, targetHum = GetCurrentZombie()
                 
-                -- กรณีที่ 1: เจอมอนสเตอร์ -> ฟาร์มปกติ
                 if targetPart and targetPart.Parent then
                     local startObjective = GetCurrentObjectiveName()
                     
@@ -122,11 +123,8 @@ task.spawn(function()
                         myRoot.CFrame = targetPart.CFrame * CFrame.new(0, 0, _G_Distance)
                     end
                 else
-                    -- กรณีที่ 2: มอนหมดแมพ -> ระบบ Smart Sweeper จะทำงาน
                     local mapFolder = Workspace:FindFirstChild("Map")
                     if mapFolder then
-                        
-                        -- สเต็ป A: มุดหา Hitbox ใน Gates เผื่อต้องเปิดประตูให้มอนเกิด
                         local gatesFolder = mapFolder:FindFirstChild("Gates")
                         if gatesFolder and #gatesFolder:GetChildren() > 0 then
                             for _, gate in pairs(gatesFolder:GetChildren()) do
@@ -135,13 +133,12 @@ task.spawn(function()
                                 if hitbox then
                                     pcall(function()
                                         myRoot.CFrame = hitbox.CFrame
-                                        task.wait(0.1) -- แตะเพื่อเปิดเกท
+                                        task.wait(0.1)
                                     end)
                                 end
                             end
                         end
                         
-                        -- สเต็ป B: มุดหา portique (ประตูห้องบอส/จบด่าน) แล้วกด E
                         local objFolder = mapFolder:FindFirstChild("Objective")
                         if objFolder then
                             local entries = objFolder:FindFirstChild("Entries")
@@ -150,12 +147,10 @@ task.spawn(function()
                                     if obj.Name:lower():find("portique") and obj:IsA("BasePart") then
                                         pcall(function()
                                             myRoot.CFrame = obj.CFrame
-                                            -- จำลองกดปุ่ม E
                                             VIM:SendKeyEvent(true, Enum.KeyCode.E, false, game)
                                             task.wait(0.1)
                                             VIM:SendKeyEvent(false, Enum.KeyCode.E, false, game)
                                             
-                                            -- เสริมความชัวร์: สั่งรัน ProximityPrompt (ถ้ามี)
                                             local prompt = obj:FindFirstChildWhichIsA("ProximityPrompt", true) or obj.Parent:FindFirstChildWhichIsA("ProximityPrompt", true)
                                             if prompt then fireproximityprompt(prompt) end
                                         end)
@@ -165,7 +160,7 @@ task.spawn(function()
                             end
                         end
                     end
-                    task.wait(0.5) -- หน่วงเวลาป้องกันลูปกระตุกช่วงรอโหลดมอน/ด่าน
+                    task.wait(0.5) 
                 end
             end
         end
@@ -201,6 +196,32 @@ task.spawn(function()
     end
 end)
 
+-- [[ 8.5 ลูปอิสระที่ 4: ระบบ Auto Click (LMB) 🔥เพิ่มใหม่ ]]
+task.spawn(function()
+    while task.wait(0.1) do
+        if _G_Farming and _G_AutoClick then
+            local char = LocalPlayer.Character
+            if char then
+                -- 1. แบบใช้ Tool (ตีชัวร์ถ้าถืออาวุธ)
+                local tool = char:FindFirstChildOfClass("Tool")
+                if tool then
+                    pcall(function() tool:Activate() end)
+                end
+                
+                -- 2. แบบใช้ VIM คลิกกลางจอ (ครอบคลุมเกมตีนอกเหนือจาก Tool)
+                pcall(function()
+                    local cam = workspace.CurrentCamera
+                    if cam then
+                        VIM:SendMouseButtonEvent(cam.ViewportSize.X/2, cam.ViewportSize.Y/2, 0, true, game, 1)
+                        task.wait(0.01)
+                        VIM:SendMouseButtonEvent(cam.ViewportSize.X/2, cam.ViewportSize.Y/2, 0, false, game, 1)
+                    end
+                end)
+            end
+        end
+    end
+end)
+
 -- [[ 9. การสร้าง GUI V5.6 ]]
 local UI_Parent = (pcall(function() return game:GetService("CoreGui").Name end) and game:GetService("CoreGui")) or LocalPlayer:WaitForChild("PlayerGui")
 if UI_Parent:FindFirstChild("LunaHubV5_5") then UI_Parent.LunaHubV5_5:Destroy() end
@@ -212,7 +233,7 @@ ScreenGui.Parent = UI_Parent
 
 local MainFrame = Instance.new("Frame")
 MainFrame.Size = UDim2.new(0, 260, 0, 215)
-MainFrame.Position = UDim2.new(0, 20, 0.5, -107) -- ชิดซ้ายจอ
+MainFrame.Position = UDim2.new(0, 20, 0.5, -107) 
 MainFrame.BackgroundColor3 = Color3.fromRGB(25, 25, 30)
 MainFrame.BorderSizePixel = 0
 MainFrame.Active = true
@@ -228,23 +249,35 @@ Title.Font = Enum.Font.GothamBold
 Title.TextSize = 12
 Title.Parent = MainFrame
 
+-- ปุ่มตั้งค่า Farm
 local ToggleBtn = Instance.new("TextButton")
-ToggleBtn.Size = UDim2.new(0.9, 0, 0, 30)
+ToggleBtn.Size = UDim2.new(0.42, 0, 0, 30)
 ToggleBtn.Position = UDim2.new(0.05, 0, 0, 40)
 ToggleBtn.BackgroundColor3 = _G_Farming and Color3.fromRGB(50, 200, 50) or Color3.fromRGB(200, 50, 50)
 ToggleBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
-ToggleBtn.Text = "FARM & AUTO START: " .. (_G_Farming and "ON" or "OFF")
+ToggleBtn.Text = "FARM: " .. (_G_Farming and "ON" or "OFF")
 ToggleBtn.Font = Enum.Font.GothamBold
 ToggleBtn.TextSize = 11
 ToggleBtn.Parent = MainFrame
 Instance.new("UICorner", ToggleBtn).CornerRadius = UDim.new(0, 5)
 
--- ปุ่มสกิล 7 ปุ่ม (เพิ่ม F และจัดระยะให้พอดี)
+-- ปุ่มตั้งค่า Auto Click (LMB)
+local ClickBtn = Instance.new("TextButton")
+ClickBtn.Size = UDim2.new(0.42, 0, 0, 30)
+ClickBtn.Position = UDim2.new(0.53, 0, 0, 40)
+ClickBtn.BackgroundColor3 = _G_AutoClick and Color3.fromRGB(50, 200, 50) or Color3.fromRGB(200, 50, 50)
+ClickBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+ClickBtn.Text = "CLICK: " .. (_G_AutoClick and "ON" or "OFF")
+ClickBtn.Font = Enum.Font.GothamBold
+ClickBtn.TextSize = 11
+ClickBtn.Parent = MainFrame
+Instance.new("UICorner", ClickBtn).CornerRadius = UDim.new(0, 5)
+
+-- ปุ่มสกิล 7 ปุ่ม 
 local skillKeys = {"Z", "X", "C", "V", "F", "E", "G"}
 for i, key in ipairs(skillKeys) do
     local sBtn = Instance.new("TextButton")
     sBtn.Size = UDim2.new(0.11, 0, 0, 25)
-    -- กระจายตำแหน่งให้ 7 ปุ่มอยู่แถวเดียวกันอย่างสมดุล
     sBtn.Position = UDim2.new(0.04 + ((i - 1) * 0.13), 0, 0, 80)
     sBtn.BackgroundColor3 = _G_SkillStates[key] and Color3.fromRGB(50, 200, 50) or Color3.fromRGB(200, 50, 50)
     sBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
@@ -279,10 +312,10 @@ DistBG.BackgroundColor3 = Color3.fromRGB(50, 50, 55)
 DistBG.Text = ""
 DistBG.Parent = MainFrame
 
-local SliderFill = Instance.new("Frame")
-SliderFill.Size = UDim2.new(_G_Distance / 20, 0, 1, 0)
-SliderFill.BackgroundColor3 = Color3.fromRGB(80, 150, 255)
-SliderFill.Parent = SliderBG
+local DistFill = Instance.new("Frame") -- แก้ไขบั๊กตัวแปรตรงนี้ให้แล้ว
+DistFill.Size = UDim2.new(_G_Distance / 20, 0, 1, 0)
+DistFill.BackgroundColor3 = Color3.fromRGB(80, 150, 255)
+DistFill.Parent = DistBG
 
 -- สไลเดอร์ 2: เวลาหน่วงสกิล
 local DelayTitle = Instance.new("TextLabel")
@@ -312,7 +345,14 @@ DelayFill.Parent = DelayBG
 ToggleBtn.MouseButton1Click:Connect(function()
     _G_Farming = not _G_Farming
     ToggleBtn.BackgroundColor3 = _G_Farming and Color3.fromRGB(50, 200, 50) or Color3.fromRGB(200, 50, 50)
-    ToggleBtn.Text = "FARM & AUTO START: " .. (_G_Farming and "ON" or "OFF")
+    ToggleBtn.Text = "FARM: " .. (_G_Farming and "ON" or "OFF")
+    SaveSettings()
+end)
+
+ClickBtn.MouseButton1Click:Connect(function()
+    _G_AutoClick = not _G_AutoClick
+    ClickBtn.BackgroundColor3 = _G_AutoClick and Color3.fromRGB(50, 200, 50) or Color3.fromRGB(200, 50, 50)
+    ClickBtn.Text = "CLICK: " .. (_G_AutoClick and "ON" or "OFF")
     SaveSettings()
 end)
 
