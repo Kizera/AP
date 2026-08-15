@@ -7,7 +7,7 @@ local HttpService = game:GetService("HttpService")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 local LocalPlayer = Players.LocalPlayer
-local configFileName = "LunaHub_V5_8_Save.json"
+local configFileName = "LunaHub_V5_9_Save.json"
 
 -- ค่าเริ่มต้นระบบ
 _G_Farming = true
@@ -71,36 +71,52 @@ local function GetCurrentObjectiveName()
     return ""
 end
 
--- [[ 4. ระบบ Global Scanner (สแกนลำดับความสำคัญ) ]]
+-- [[ 4. ระบบ Global Scanner (🔥 อัปเกรดขยายขอบเขต & เร็วขึ้น 10 เท่า) ]]
 local function GetCurrentZombie()
-    local folder = Workspace:FindFirstChild("Zombies")
-    if not folder then return nil, nil end
+    -- ขยายการค้นหาเผื่อเกมเปลี่ยนชื่อโฟลเดอร์เก็บมอนสเตอร์
+    local possibleFolders = {
+        Workspace:FindFirstChild("Zombies"),
+        Workspace:FindFirstChild("Enemies"),
+        Workspace:FindFirstChild("Mobs"),
+        Workspace:FindFirstChild("NPCs")
+    }
     
-    -- 🔥 เช็ค Boss Lock: ลำดับ 1 คือ Pucci ต้องตายก่อน, ลำดับ 2 คือ DIO
+    -- 1. เช็ค Boss Lock ก่อนเสมอ
     if _G_BossLock then
         local targetBosses = {"Pucci", "Dio Over Heaven"}
-        for _, bossName in ipairs(targetBosses) do
-            local boss = folder:FindFirstChild(bossName)
-            if boss then
-                local hum = boss:FindFirstChildOfClass("Humanoid")
-                local root = boss:FindFirstChild("HumanoidRootPart") or boss:FindFirstChild("Torso")
-                if hum and hum.Health > 0 and root then
-                    return root, hum -- ถ้าเจอ Pucci จะรีเทิร์นไปหาทันที ไม่สนใจ DIO
+        for _, folder in ipairs(possibleFolders) do
+            if folder then
+                for _, bossName in ipairs(targetBosses) do
+                    local boss = folder:FindFirstChild(bossName)
+                    if boss then
+                        local hum = boss:FindFirstChildOfClass("Humanoid")
+                        local root = boss:FindFirstChild("HumanoidRootPart") or boss:FindFirstChild("Torso")
+                        if hum and hum.Health > 0 and root then
+                            return root, hum 
+                        end
+                    end
                 end
             end
         end
     end
     
-    -- ถ้าไม่เจอบอส ค่อยตีลูกน้องปกติ
-    for _, part in pairs(folder:GetDescendants()) do
-        if (part.Name == "HumanoidRootPart" or part.Name == "Torso") and part:IsA("BasePart") then
-            local mob = part.Parent
-            local hum = mob:FindFirstChildOfClass("Humanoid")
-            if hum and hum.Health > 0 then
-                return part, hum
+    -- 2. สแกนหามอนสเตอร์ลูกกระจ๊อกทั้งหมดแบบรวดเร็ว
+    for _, folder in ipairs(possibleFolders) do
+        if folder then
+            -- เปลี่ยนจาก GetDescendants เป็น GetChildren เพื่อลดอาการแลค
+            for _, mob in pairs(folder:GetChildren()) do 
+                if mob:IsA("Model") then
+                    local hum = mob:FindFirstChildOfClass("Humanoid")
+                    local root = mob:FindFirstChild("HumanoidRootPart") or mob:FindFirstChild("Torso")
+                    
+                    if hum and hum.Health > 0 and root then
+                        return root, hum
+                    end
+                end
             end
         end
     end
+    
     return nil, nil
 end
 
@@ -119,7 +135,7 @@ local function CastAllSkills()
     end
 end
 
--- [[ 6. ลูปอิสระที่ 1: ระบบฟาร์มและ Smart Sweeper (🔥 แก้บัคสลับเป้าหมาย) ]]
+-- [[ 6. ลูปอิสระที่ 1: ระบบฟาร์มและ Smart Sweeper (🔥 แก้บัคติดประตู) ]]
 task.spawn(function()
     while true do
         task.wait()
@@ -128,37 +144,41 @@ task.spawn(function()
             local myRoot = char and char:FindFirstChild("HumanoidRootPart")
             
             if myRoot then
-                -- ลองหาเป้าหมายดูก่อนว่ามีไหม
                 local initTargetPart, initTargetHum = GetCurrentZombie()
                 
                 if initTargetPart and initTargetPart.Parent then
                     local startObjective = GetCurrentObjectiveName()
                     
-                    -- 🔥 เปลี่ยนมาใช้ลูปเช็คเป้าหมายแบบ Real-time ตลอดเวลา
+                    -- โซนตีมอน
                     while _G_Farming do
                         task.wait()
                         if not LocalPlayer.Character or not LocalPlayer.Character:FindFirstChild("HumanoidRootPart") then break end
+                        
+                        -- ถ้าเควสเปลี่ยน ให้รีเซ็ตเพื่อเช็คเป้าหมายใหม่
                         if GetCurrentObjectiveName() ~= startObjective then break end
                         
-                        -- ดึงข้อมูลเป้าหมายใหม่ล่าสุดทุกเสี้ยววินาที (ถ้า Pucci เกิด มันจะเปลี่ยนเป้าทันที)
                         local currentTargetPart, currentTargetHum = GetCurrentZombie()
                         
-                        -- ถ้ายกแมพไม่มีมอนสเตอร์เหลือเลย ให้ออกลูปไปเตรียมเปิดเกท
+                        -- ถ้ามอนหมดจริงๆ ค่อยเบรกลูปออกไปหาประตู
                         if not currentTargetPart or not currentTargetPart.Parent or currentTargetHum.Health <= 0 then 
                             break 
                         end
                         
-                        -- พุ่งไปเป้าหมายล่าสุด
+                        -- พุ่งตีมอน
                         myRoot.CFrame = currentTargetPart.CFrame * CFrame.new(0, 0, _G_Distance)
                     end
                 else
-                    -- ระบบเปิดเกท/เข้าห้องบอส
+                    -- โซนหาประตู/เคลียร์ด่าน
                     local mapFolder = Workspace:FindFirstChild("Map")
                     if mapFolder then
+                        
+                        -- หาสนามพลัง/ประตู
                         local gatesFolder = mapFolder:FindFirstChild("Gates")
                         if gatesFolder and #gatesFolder:GetChildren() > 0 then
                             for _, gate in pairs(gatesFolder:GetChildren()) do
-                                if not _G_Farming then break end
+                                -- 🔥 ระบบเบรกฉุกเฉิน: ถ้าปิดฟาร์ม หรือมีมอนเกิดใหม่ ให้หยุดไถประตูทันที!
+                                if not _G_Farming or GetCurrentZombie() then break end 
+                                
                                 local hitbox = gate:FindFirstChild("Hitbox") or gate:FindFirstChildWhichIsA("BasePart", true)
                                 if hitbox then
                                     pcall(function()
@@ -169,11 +189,15 @@ task.spawn(function()
                             end
                         end
                         
+                        -- หาประตูห้องบอส
                         local objFolder = mapFolder:FindFirstChild("Objective")
                         if objFolder then
                             local entries = objFolder:FindFirstChild("Entries")
                             if entries then
                                 for _, obj in pairs(entries:GetDescendants()) do
+                                    -- 🔥 ระบบเบรกฉุกเฉิน: เช็คตลอดเวลาเผื่อมอนเกิดตอนรอเข้าห้องบอส
+                                    if not _G_Farming or GetCurrentZombie() then break end
+                                    
                                     if obj.Name:lower():find("portique") and obj:IsA("BasePart") then
                                         pcall(function()
                                             myRoot.CFrame = obj.CFrame
@@ -250,15 +274,16 @@ task.spawn(function()
     end
 end)
 
--- [[ 9. การสร้าง GUI V5.8 ]]
+-- [[ 9. การสร้าง GUI V5.9 ]]
 local UI_Parent = (pcall(function() return game:GetService("CoreGui").Name end) and game:GetService("CoreGui")) or LocalPlayer:WaitForChild("PlayerGui")
 if UI_Parent:FindFirstChild("LunaHubV5_5") then UI_Parent.LunaHubV5_5:Destroy() end
 if UI_Parent:FindFirstChild("LunaHubV5_6") then UI_Parent.LunaHubV5_6:Destroy() end
 if UI_Parent:FindFirstChild("LunaHubV5_7") then UI_Parent.LunaHubV5_7:Destroy() end
 if UI_Parent:FindFirstChild("LunaHubV5_8") then UI_Parent.LunaHubV5_8:Destroy() end
+if UI_Parent:FindFirstChild("LunaHubV5_9") then UI_Parent.LunaHubV5_9:Destroy() end
 
 local ScreenGui = Instance.new("ScreenGui")
-ScreenGui.Name = "LunaHubV5_8"
+ScreenGui.Name = "LunaHubV5_9"
 ScreenGui.Parent = UI_Parent
 
 local MainFrame = Instance.new("Frame")
@@ -274,7 +299,7 @@ local Title = Instance.new("TextLabel")
 Title.Size = UDim2.new(1, 0, 0, 30)
 Title.BackgroundColor3 = Color3.fromRGB(40, 40, 45)
 Title.TextColor3 = Color3.fromRGB(255, 255, 255)
-Title.Text = "Luna Hub | V5.8 Dynamic Boss Lock"
+Title.Text = "Luna Hub | V5.9 Smart Radar"
 Title.Font = Enum.Font.GothamBold
 Title.TextSize = 11
 Title.Parent = MainFrame
